@@ -2841,45 +2841,47 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                   </button>
                 ))}
               </div>
-              <div className="field__footer">
-                <span>목록에 없는 시설도 직접 추가할 수 있어요.</span>
-                <span>{form.customFacilities.length}개 추가됨</span>
-              </div>
-              <div className="field__inline-action">
-                <input
-                  className="field__input"
-                  type="text"
-                  placeholder="예: 빔프로젝션, 탈의실, 음료바"
-                  value={form.facilityDraft}
-                  onChange={(event) => updateField("facilityDraft", event.target.value)}
-                  onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomFacility)}
-                />
-                <button
-                  className="field__action-button"
-                  type="button"
-                  onClick={addCustomFacility}
-                  disabled={!form.facilityDraft.trim()}
-                >
-                  추가
-                </button>
-              </div>
-              {form.customFacilities.length > 0 ? (
-                <div className="field-tag-list">
-                  {form.customFacilities.map((facility) => (
-                    <button
-                      key={facility}
-                      className="field-tag"
-                      type="button"
-                      onClick={() => removeCustomFacility(facility)}
-                    >
-                      <span>#{facility}</span>
-                      <span className="field-tag__remove" aria-hidden="true">
-                        ×
-                      </span>
-                    </button>
-                  ))}
+              <div className="field__custom-block">
+                <div className="field__custom-head">
+                  <p className="field__custom-guide">목록에 없는 시설도 직접 추가할 수 있어요.</p>
+                  <span className="field__count-badge">{form.customFacilities.length}개 추가됨</span>
                 </div>
-              ) : null}
+                <div className="field__inline-action field__inline-action--custom">
+                  <input
+                    className="field__input"
+                    type="text"
+                    placeholder="예: 빔프로젝션, 탈의실, 음료바"
+                    value={form.facilityDraft}
+                    onChange={(event) => updateField("facilityDraft", event.target.value)}
+                    onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomFacility)}
+                  />
+                  <button
+                    className="field__action-button"
+                    type="button"
+                    onClick={addCustomFacility}
+                    disabled={!form.facilityDraft.trim()}
+                  >
+                    추가
+                  </button>
+                </div>
+                {form.customFacilities.length > 0 ? (
+                  <div className="field-tag-list">
+                    {form.customFacilities.map((facility) => (
+                      <button
+                        key={facility}
+                        className="field-tag"
+                        type="button"
+                        onClick={() => removeCustomFacility(facility)}
+                      >
+                        <span>#{facility}</span>
+                        <span className="field-tag__remove" aria-hidden="true">
+                          ×
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="field">
@@ -2897,45 +2899,47 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                   </button>
                 ))}
               </div>
-              <div className="field__footer">
-                <span>별도 제한사항을 직접 추가하고 태그처럼 관리할 수 있어요.</span>
-                <span>{form.customRestrictions.length}개 추가됨</span>
-              </div>
-              <div className="field__inline-action">
-                <input
-                  className="field__input"
-                  type="text"
-                  placeholder="예: 화기 사용 불가, 외부 간판 설치 불가"
-                  value={form.restrictionDraft}
-                  onChange={(event) => updateField("restrictionDraft", event.target.value)}
-                  onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomRestriction)}
-                />
-                <button
-                  className="field__action-button"
-                  type="button"
-                  onClick={addCustomRestriction}
-                  disabled={!form.restrictionDraft.trim()}
-                >
-                  추가
-                </button>
-              </div>
-              {form.customRestrictions.length > 0 ? (
-                <div className="field-tag-list">
-                  {form.customRestrictions.map((restriction) => (
-                    <button
-                      key={restriction}
-                      className="field-tag"
-                      type="button"
-                      onClick={() => removeCustomRestriction(restriction)}
-                    >
-                      <span>#{restriction}</span>
-                      <span className="field-tag__remove" aria-hidden="true">
-                        ×
-                      </span>
-                    </button>
-                  ))}
+              <div className="field__custom-block">
+                <div className="field__custom-head">
+                  <p className="field__custom-guide">별도 제한사항을 직접 추가하고 태그처럼 관리할 수 있어요.</p>
+                  <span className="field__count-badge">{form.customRestrictions.length}개 추가됨</span>
                 </div>
-              ) : null}
+                <div className="field__inline-action field__inline-action--custom">
+                  <input
+                    className="field__input"
+                    type="text"
+                    placeholder="예: 화기 사용 불가, 외부 간판 설치 불가"
+                    value={form.restrictionDraft}
+                    onChange={(event) => updateField("restrictionDraft", event.target.value)}
+                    onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomRestriction)}
+                  />
+                  <button
+                    className="field__action-button"
+                    type="button"
+                    onClick={addCustomRestriction}
+                    disabled={!form.restrictionDraft.trim()}
+                  >
+                    추가
+                  </button>
+                </div>
+                {form.customRestrictions.length > 0 ? (
+                  <div className="field-tag-list">
+                    {form.customRestrictions.map((restriction) => (
+                      <button
+                        key={restriction}
+                        className="field-tag"
+                        type="button"
+                        onClick={() => removeCustomRestriction(restriction)}
+                      >
+                        <span>#{restriction}</span>
+                        <span className="field-tag__remove" aria-hidden="true">
+                          ×
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="registration-grid registration-grid--two">

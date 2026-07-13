@@ -2490,6 +2490,44 @@ img {
   font-size: 0.92rem;
 }
 
+.field__custom-block {
+  margin-top: 18px;
+  padding: 18px 20px 20px;
+  border: 1px solid #edf1f5;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f9fbfd 100%);
+}
+
+.field__custom-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.field__custom-guide {
+  margin: 0;
+  color: #9ba4b0;
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+.field__count-badge {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f6fb;
+  color: #8b95a3;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .field__helper {
   margin: 10px 0 0;
   color: #a0a7b2;
@@ -2502,6 +2540,11 @@ img {
   grid-template-columns: minmax(0, 1fr) 112px;
   gap: 12px;
   align-items: center;
+}
+
+.field__inline-action--custom {
+  grid-template-columns: minmax(0, 1fr) 128px;
+  gap: 14px;
 }
 
 .field__action-button {
@@ -2534,7 +2577,7 @@ img {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 .field-tag {
@@ -3292,6 +3335,17 @@ img {
 
   .field__inline-action {
     grid-template-columns: 1fr;
+  }
+
+  .field__custom-block {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .field__custom-head {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: 12px;
   }
 
   .field--address-detail {
