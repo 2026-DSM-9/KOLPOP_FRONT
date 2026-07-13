@@ -157,7 +157,7 @@ const splitPresetAndCustomEntries = (items, presetOptions) => {
 
   return {
     preset: items.filter((item) => presetSet.has(item)),
-    custom: items.filter((item) => !presetSet.has(item)).join(", "),
+    custom: items.filter((item) => !presetSet.has(item)),
   };
 };
 const normalizeAreaValue = (area) => `${area ?? ""}`.replace(/[^\d.]/g, "");
@@ -227,9 +227,11 @@ const createInitialRegistrationForm = () => ({
   deposit: "1000000",
   area: "66.1",
   facilities: [],
-  facilityNotes: "",
+  customFacilities: [],
+  facilityDraft: "",
   restrictions: ["없음"],
-  restrictionNotes: "",
+  customRestrictions: [],
+  restrictionDraft: "",
   availableFrom: "",
   availableTo: "",
   minDays: "1",
@@ -259,9 +261,11 @@ const createRegistrationFormFromListing = (listing) => {
     deposit: listing.deposit !== undefined ? `${listing.deposit}` : "1000000",
     area: normalizeAreaValue(listing.area),
     facilities: facilityEntries.preset,
-    facilityNotes: facilityEntries.custom,
+    customFacilities: facilityEntries.custom,
+    facilityDraft: "",
     restrictions: nextRestrictions,
-    restrictionNotes: restrictionEntries.custom,
+    customRestrictions: restrictionEntries.custom,
+    restrictionDraft: "",
     availableFrom: listing.availableFrom ?? "",
     availableTo: listing.availableTo ?? "",
     minDays: listing.minDays ?? "1",
@@ -2376,6 +2380,110 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
     });
   };
 
+  const addCustomFacility = () => {
+    setForm((current) => {
+      const entries = parseCustomEntries(current.facilityDraft);
+
+      if (entries.length === 0) {
+        return current;
+      }
+
+      const nextFacilities = [...current.facilities];
+      const nextCustomFacilities = [...current.customFacilities];
+
+      entries.forEach((entry) => {
+        if (facilityOptions.includes(entry)) {
+          if (!nextFacilities.includes(entry)) {
+            nextFacilities.push(entry);
+          }
+
+          return;
+        }
+
+        if (!nextCustomFacilities.includes(entry)) {
+          nextCustomFacilities.push(entry);
+        }
+      });
+
+      return {
+        ...current,
+        facilities: nextFacilities,
+        customFacilities: nextCustomFacilities,
+        facilityDraft: "",
+      };
+    });
+  };
+
+  const removeCustomFacility = (facility) => {
+    setForm((current) => ({
+      ...current,
+      customFacilities: current.customFacilities.filter((item) => item !== facility),
+    }));
+  };
+
+  const addCustomRestriction = () => {
+    setForm((current) => {
+      const entries = parseCustomEntries(current.restrictionDraft);
+
+      if (entries.length === 0) {
+        return current;
+      }
+
+      const nextRestrictions = current.restrictions.filter((item) => item !== "없음");
+      const nextCustomRestrictions = [...current.customRestrictions];
+
+      entries.forEach((entry) => {
+        if (entry === "없음") {
+          return;
+        }
+
+        if (restrictionOptions.includes(entry)) {
+          if (!nextRestrictions.includes(entry)) {
+            nextRestrictions.push(entry);
+          }
+
+          return;
+        }
+
+        if (!nextCustomRestrictions.includes(entry)) {
+          nextCustomRestrictions.push(entry);
+        }
+      });
+
+      return {
+        ...current,
+        restrictions:
+          nextRestrictions.length > 0 || nextCustomRestrictions.length > 0
+            ? nextRestrictions
+            : ["없음"],
+        customRestrictions: nextCustomRestrictions,
+        restrictionDraft: "",
+      };
+    });
+  };
+
+  const removeCustomRestriction = (restriction) => {
+    setForm((current) => {
+      const nextCustomRestrictions = current.customRestrictions.filter((item) => item !== restriction);
+      const hasPresetRestriction = current.restrictions.some((item) => item !== "없음");
+
+      return {
+        ...current,
+        restrictions: hasPresetRestriction || nextCustomRestrictions.length > 0 ? current.restrictions : ["없음"],
+        customRestrictions: nextCustomRestrictions,
+      };
+    });
+  };
+
+  const handleCustomDraftKeyDown = (event, onAdd) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+    onAdd();
+  };
+
   const appendFiles = async (fileList) => {
     const remainingCount = Math.max(0, 10 - photoPreviews.length);
     const validFiles = Array.from(fileList)
@@ -2420,12 +2528,16 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
     const baseAddress = form.address.trim();
     const detailAddress = form.detailAddress.trim();
     const address = [baseAddress, detailAddress].filter(Boolean).join(" ");
-    const customFacilities = parseCustomEntries(form.facilityNotes);
-    const customRestrictions = parseCustomEntries(form.restrictionNotes);
+    const customFacilities = Array.from(
+      new Set([...form.customFacilities, ...parseCustomEntries(form.facilityDraft)]),
+    );
+    const customRestrictions = Array.from(
+      new Set([...form.customRestrictions, ...parseCustomEntries(form.restrictionDraft).filter((item) => item !== "없음")]),
+    );
     const nextFacilities = Array.from(new Set([...form.facilities, ...customFacilities]));
     const nextRestrictions = Array.from(
       new Set([
-        ...form.restrictions.filter((item) => item !== "없음" || customRestrictions.length === 0),
+        ...form.restrictions.filter((item) => item !== "없음"),
         ...customRestrictions,
       ]),
     );
@@ -2772,14 +2884,43 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
               </div>
               <div className="field__footer">
                 <span>목록에 없는 시설도 직접 추가할 수 있어요.</span>
+                <span>{form.customFacilities.length}개 추가됨</span>
               </div>
-              <textarea
-                className="field__textarea field__textarea--compact"
-                rows={3}
-                placeholder="예: 빔프로젝션, 탈의실, 음료바"
-                value={form.facilityNotes}
-                onChange={(event) => updateField("facilityNotes", event.target.value)}
-              />
+              <div className="field__inline-action">
+                <input
+                  className="field__input"
+                  type="text"
+                  placeholder="예: 빔프로젝션, 탈의실, 음료바"
+                  value={form.facilityDraft}
+                  onChange={(event) => updateField("facilityDraft", event.target.value)}
+                  onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomFacility)}
+                />
+                <button
+                  className="field__action-button"
+                  type="button"
+                  onClick={addCustomFacility}
+                  disabled={!form.facilityDraft.trim()}
+                >
+                  추가
+                </button>
+              </div>
+              {form.customFacilities.length > 0 ? (
+                <div className="field-tag-list">
+                  {form.customFacilities.map((facility) => (
+                    <button
+                      key={facility}
+                      className="field-tag"
+                      type="button"
+                      onClick={() => removeCustomFacility(facility)}
+                    >
+                      <span>#{facility}</span>
+                      <span className="field-tag__remove" aria-hidden="true">
+                        ×
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="field">
@@ -2798,15 +2939,44 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                 ))}
               </div>
               <div className="field__footer">
-                <span>별도 제한사항이 있으면 쉼표나 줄바꿈으로 입력해 주세요.</span>
+                <span>별도 제한사항을 직접 추가하고 태그처럼 관리할 수 있어요.</span>
+                <span>{form.customRestrictions.length}개 추가됨</span>
               </div>
-              <textarea
-                className="field__textarea field__textarea--compact"
-                rows={3}
-                placeholder="예: 화기 사용 불가, 외부 간판 설치 불가"
-                value={form.restrictionNotes}
-                onChange={(event) => updateField("restrictionNotes", event.target.value)}
-              />
+              <div className="field__inline-action">
+                <input
+                  className="field__input"
+                  type="text"
+                  placeholder="예: 화기 사용 불가, 외부 간판 설치 불가"
+                  value={form.restrictionDraft}
+                  onChange={(event) => updateField("restrictionDraft", event.target.value)}
+                  onKeyDown={(event) => handleCustomDraftKeyDown(event, addCustomRestriction)}
+                />
+                <button
+                  className="field__action-button"
+                  type="button"
+                  onClick={addCustomRestriction}
+                  disabled={!form.restrictionDraft.trim()}
+                >
+                  추가
+                </button>
+              </div>
+              {form.customRestrictions.length > 0 ? (
+                <div className="field-tag-list">
+                  {form.customRestrictions.map((restriction) => (
+                    <button
+                      key={restriction}
+                      className="field-tag"
+                      type="button"
+                      onClick={() => removeCustomRestriction(restriction)}
+                    >
+                      <span>#{restriction}</span>
+                      <span className="field-tag__remove" aria-hidden="true">
+                        ×
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="registration-grid registration-grid--two">
