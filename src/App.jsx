@@ -693,11 +693,31 @@ function ListingCard({ listing, active, onSelect, onOpenDetail }) {
   );
 }
 
-function OwnedListingCard({ listing, reservationCount, onEdit, onDelete, onCloseRecruitment }) {
+function OwnedListingCard({ listing, reservationCount, onEdit, onDelete, onCloseRecruitment, onOpenDetail }) {
   const closed = listing.status === "모집 종료";
+  const handleOpenDetail = () => {
+    onOpenDetail(listing.id);
+  };
+
+  const handleActionClick = (event, callback) => {
+    event.stopPropagation();
+    callback();
+  };
 
   return (
-    <article className="owned-listing-card">
+    <article
+      className="owned-listing-card"
+      role="button"
+      tabIndex={0}
+      aria-label={`${listing.title} 상세 보기`}
+      onClick={handleOpenDetail}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleOpenDetail();
+        }
+      }}
+    >
       <div className="owned-listing-card__media">
         <img src={listing.image} alt={listing.title} loading="lazy" />
         <span className={`owned-listing-card__status ${closed ? "is-closed" : ""}`}>{listing.status}</span>
@@ -715,16 +735,24 @@ function OwnedListingCard({ listing, reservationCount, onEdit, onDelete, onClose
         </div>
 
         <div className="owned-listing-card__actions">
-          <button className="owned-listing-card__action" type="button" onClick={() => onEdit(listing.id)}>
+          <button
+            className="owned-listing-card__action"
+            type="button"
+            onClick={(event) => handleActionClick(event, () => onEdit(listing.id))}
+          >
             수정
           </button>
-          <button className="owned-listing-card__action" type="button" onClick={() => onDelete(listing.id)}>
+          <button
+            className="owned-listing-card__action"
+            type="button"
+            onClick={(event) => handleActionClick(event, () => onDelete(listing.id))}
+          >
             삭제
           </button>
           <button
             className={`owned-listing-card__action owned-listing-card__action--dark ${closed ? "is-disabled" : ""}`}
             type="button"
-            onClick={() => onCloseRecruitment(listing.id)}
+            onClick={(event) => handleActionClick(event, () => onCloseRecruitment(listing.id))}
             disabled={closed}
           >
             {closed ? "종료됨" : "모집 종료"}
@@ -742,6 +770,7 @@ function MyPage({
   onEditListing,
   onDeleteListing,
   onCloseRecruitment,
+  onOpenDetail,
   onUpdateProfile,
 }) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -863,6 +892,7 @@ function MyPage({
                   onEdit={onEditListing}
                   onDelete={onDeleteListing}
                   onCloseRecruitment={onCloseRecruitment}
+                  onOpenDetail={onOpenDetail}
                 />
               ))}
             </div>
@@ -3051,6 +3081,7 @@ export default function App() {
   const [registeredUsernames, setRegisteredUsernames] = useState(() => existingUsernameSeed);
   const [editingListingId, setEditingListingId] = useState(null);
   const [selectedListingId, setSelectedListingId] = useState(null);
+  const [detailReturnPage, setDetailReturnPage] = useState("home");
 
   const appKey = import.meta.env.VITE_KAKAO_MAP_APP_KEY ?? "";
   const editingListing = listings.find((listing) => listing.id === editingListingId) ?? null;
@@ -3245,8 +3276,9 @@ export default function App() {
     setCurrentPage("register");
   };
 
-  const openListingDetailPage = (listingId) => {
+  const openListingDetailPage = (listingId, returnPage = "home") => {
     setSelectedListingId(listingId);
+    setDetailReturnPage(returnPage);
     setCurrentPage("detail");
   };
 
@@ -3338,7 +3370,7 @@ export default function App() {
         appKey={appKey}
         onBack={() => {
           setSelectedListingId(null);
-          setCurrentPage("home");
+          setCurrentPage(detailReturnPage);
         }}
       />
     );
@@ -3353,6 +3385,7 @@ export default function App() {
         onEditListing={openListingEditPage}
         onDeleteListing={deleteListing}
         onCloseRecruitment={closeRecruitment}
+        onOpenDetail={(listingId) => openListingDetailPage(listingId, "mypage")}
         onUpdateProfile={handleUpdateProfile}
       />
     );
