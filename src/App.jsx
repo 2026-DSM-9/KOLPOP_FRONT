@@ -143,6 +143,23 @@ const formatPhoneNumber = (value) => {
 
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 };
+const parseCustomEntries = (value) =>
+  Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
+const splitPresetAndCustomEntries = (items, presetOptions) => {
+  const presetSet = new Set(presetOptions);
+
+  return {
+    preset: items.filter((item) => presetSet.has(item)),
+    custom: items.filter((item) => !presetSet.has(item)).join(", "),
+  };
+};
 const normalizeAreaValue = (area) => `${area ?? ""}`.replace(/[^\d.]/g, "");
 const formatHashtagInput = (hashtags) => hashtags.join(", ");
 const findRegionHashtag = (address) => {
@@ -210,7 +227,9 @@ const createInitialRegistrationForm = () => ({
   deposit: "1000000",
   area: "66.1",
   facilities: [],
+  facilityNotes: "",
   restrictions: ["없음"],
+  restrictionNotes: "",
   availableFrom: "",
   availableTo: "",
   minDays: "1",
@@ -218,27 +237,39 @@ const createInitialRegistrationForm = () => ({
   description: "",
   hashtags: "",
 });
-const createRegistrationFormFromListing = (listing) => ({
-  ...createInitialRegistrationForm(),
-  title: listing.title ?? "",
-  address: listing.baseAddress ?? listing.address ?? "",
-  detailAddress: listing.detailAddress ?? "",
-  lat: listing.lat !== undefined ? `${listing.lat}` : "",
-  lng: listing.lng !== undefined ? `${listing.lng}` : "",
-  category: listing.category ?? "",
-  price: listing.price !== undefined ? `${listing.price}` : "150000",
-  deposit: listing.deposit !== undefined ? `${listing.deposit}` : "1000000",
-  area: normalizeAreaValue(listing.area),
-  facilities: [...(listing.facilities ?? [])],
-  restrictions:
-    listing.restrictions && listing.restrictions.length > 0 ? [...listing.restrictions] : ["없음"],
-  availableFrom: listing.availableFrom ?? "",
-  availableTo: listing.availableTo ?? "",
-  minDays: listing.minDays ?? "1",
-  maxDays: listing.maxDays ?? "7",
-  description: listing.description ?? "",
-  hashtags: formatHashtagInput(listing.hashtags ?? []),
-});
+const createRegistrationFormFromListing = (listing) => {
+  const facilityEntries = splitPresetAndCustomEntries(listing.facilities ?? [], facilityOptions);
+  const restrictionEntries = splitPresetAndCustomEntries(listing.restrictions ?? [], restrictionOptions);
+  const nextRestrictions =
+    restrictionEntries.preset.length > 0
+      ? restrictionEntries.preset
+      : restrictionEntries.custom
+        ? []
+        : ["없음"];
+
+  return {
+    ...createInitialRegistrationForm(),
+    title: listing.title ?? "",
+    address: listing.baseAddress ?? listing.address ?? "",
+    detailAddress: listing.detailAddress ?? "",
+    lat: listing.lat !== undefined ? `${listing.lat}` : "",
+    lng: listing.lng !== undefined ? `${listing.lng}` : "",
+    category: listing.category ?? "",
+    price: listing.price !== undefined ? `${listing.price}` : "150000",
+    deposit: listing.deposit !== undefined ? `${listing.deposit}` : "1000000",
+    area: normalizeAreaValue(listing.area),
+    facilities: facilityEntries.preset,
+    facilityNotes: facilityEntries.custom,
+    restrictions: nextRestrictions,
+    restrictionNotes: restrictionEntries.custom,
+    availableFrom: listing.availableFrom ?? "",
+    availableTo: listing.availableTo ?? "",
+    minDays: listing.minDays ?? "1",
+    maxDays: listing.maxDays ?? "7",
+    description: listing.description ?? "",
+    hashtags: formatHashtagInput(listing.hashtags ?? []),
+  };
+};
 
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
@@ -2389,6 +2420,15 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
     const baseAddress = form.address.trim();
     const detailAddress = form.detailAddress.trim();
     const address = [baseAddress, detailAddress].filter(Boolean).join(" ");
+    const customFacilities = parseCustomEntries(form.facilityNotes);
+    const customRestrictions = parseCustomEntries(form.restrictionNotes);
+    const nextFacilities = Array.from(new Set([...form.facilities, ...customFacilities]));
+    const nextRestrictions = Array.from(
+      new Set([
+        ...form.restrictions.filter((item) => item !== "없음" || customRestrictions.length === 0),
+        ...customRestrictions,
+      ]),
+    );
 
     onSubmitListing({
       title: form.title.trim() || "새로운 팝업 공간",
@@ -2410,8 +2450,8 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
       quickAdded: editingListing?.quickAdded ?? false,
       lat: Number(form.lat) || 37.5665,
       lng: Number(form.lng) || 126.978,
-      facilities: [...form.facilities],
-      restrictions: [...form.restrictions],
+      facilities: nextFacilities,
+      restrictions: nextRestrictions.length > 0 ? nextRestrictions : ["없음"],
       availableFrom: form.availableFrom.trim(),
       availableTo: form.availableTo.trim(),
       minDays: form.minDays.trim(),
@@ -2730,6 +2770,16 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                   </button>
                 ))}
               </div>
+              <div className="field__footer">
+                <span>목록에 없는 시설도 직접 추가할 수 있어요.</span>
+              </div>
+              <textarea
+                className="field__textarea field__textarea--compact"
+                rows={3}
+                placeholder="예: 빔프로젝션, 탈의실, 음료바"
+                value={form.facilityNotes}
+                onChange={(event) => updateField("facilityNotes", event.target.value)}
+              />
             </div>
 
             <div className="field">
@@ -2747,6 +2797,16 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                   </button>
                 ))}
               </div>
+              <div className="field__footer">
+                <span>별도 제한사항이 있으면 쉼표나 줄바꿈으로 입력해 주세요.</span>
+              </div>
+              <textarea
+                className="field__textarea field__textarea--compact"
+                rows={3}
+                placeholder="예: 화기 사용 불가, 외부 간판 설치 불가"
+                value={form.restrictionNotes}
+                onChange={(event) => updateField("restrictionNotes", event.target.value)}
+              />
             </div>
 
             <div className="registration-grid registration-grid--two">

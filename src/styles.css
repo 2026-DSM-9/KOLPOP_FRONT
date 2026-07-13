@@ -2377,6 +2377,10 @@ img {
   resize: vertical;
 }
 
+.field__textarea--compact {
+  min-height: 112px;
+}
+
 .field__input::placeholder,
 .field__textarea::placeholder {
   color: #b0b5be;
