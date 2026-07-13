@@ -2726,43 +2726,48 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
               />
             </div>
 
-            <div className="registration-grid registration-grid--address">
-              <div className="field">
+            <div className="registration-address-layout">
+              <div className="field field--address-main">
                 <label className="field__label" htmlFor="listing-address">
                   주소 *
                 </label>
-                <input
-                  id="listing-address"
-                  className="field__input field__input--readonly"
-                  type="text"
-                  placeholder="주소 검색 버튼을 눌러 주소를 선택하세요"
-                  value={form.address}
-                  readOnly
-                  onClick={handleAddressSearch}
-                  required
-                />
+                <div className="field__inline-action field__inline-action--address">
+                  <input
+                    id="listing-address"
+                    className="field__input field__input--readonly field__input--soft"
+                    type="text"
+                    placeholder="주소 검색 버튼을 눌러 주소를 선택하세요"
+                    value={form.address}
+                    readOnly
+                    onClick={handleAddressSearch}
+                    required
+                  />
+
+                  <button
+                    className="field__button field__button--search"
+                    type="button"
+                    disabled={isAddressLoading}
+                    onClick={handleAddressSearch}
+                  >
+                    {isAddressLoading ? "불러오는 중" : "주소 검색"}
+                  </button>
+                </div>
               </div>
 
-              <div className="field field--button">
-                <span className="field__label field__label--hidden">주소 검색</span>
-                <button className="field__button" type="button" disabled={isAddressLoading} onClick={handleAddressSearch}>
-                  {isAddressLoading ? "불러오는 중" : "주소 검색"}
-                </button>
-              </div>
-
-              <div className="field">
+              <div className="field field--address-detail">
                 <label className="field__label" htmlFor="listing-detail-address">
                   상세주소
                 </label>
                 <input
                   id="listing-detail-address"
                   ref={detailAddressRef}
-                  className="field__input"
+                  className="field__input field__input--soft"
                   type="text"
                   value={form.detailAddress}
                   onChange={(event) => updateField("detailAddress", event.target.value)}
                   placeholder="예: 1층"
                 />
+                <p className="field__helper">층수, 호수, 매장 위치를 간단히 입력해 주세요.</p>
               </div>
             </div>
 

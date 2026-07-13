@@ -2392,6 +2392,16 @@ img {
   box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.08);
 }
 
+.field__input--soft {
+  border-color: #dfe7f0;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+}
+
+.field__input--soft:focus {
+  border-color: rgba(14, 165, 233, 0.36);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.08);
+}
+
 .field__input--readonly {
   cursor: pointer;
 }
@@ -2413,6 +2423,18 @@ img {
   opacity: 0.6;
   cursor: default;
   transform: none;
+}
+
+.field__button--search {
+  min-height: 62px;
+  border-color: #1b9fe8;
+  background: #1b9fe8;
+  color: #ffffff;
+}
+
+.field__button--search:hover {
+  border-color: #1392d7;
+  background: #1392d7;
 }
 
 .field__notice {
@@ -2532,6 +2554,13 @@ img {
   font-size: 0.92rem;
 }
 
+.field__helper {
+  margin: 10px 0 0;
+  color: #a0a7b2;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
 .field__inline-action {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 112px;
@@ -2615,6 +2644,25 @@ img {
 .registration-grid--address {
   grid-template-columns: minmax(0, 1.26fr) 128px minmax(0, 0.82fr);
   align-items: end;
+}
+
+.registration-address-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.registration-address-layout .field {
+  margin-bottom: 0;
+}
+
+.field__inline-action--address {
+  grid-template-columns: minmax(0, 1fr) 144px;
+  gap: 14px;
+}
+
+.field--address-detail {
+  max-width: 560px;
 }
 
 .field--button {
@@ -3308,6 +3356,10 @@ img {
 
   .field__inline-action {
     grid-template-columns: 1fr;
+  }
+
+  .field--address-detail {
+    max-width: none;
   }
 
   .field__action-button {
