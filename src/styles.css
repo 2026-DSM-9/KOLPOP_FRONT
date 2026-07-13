@@ -2616,6 +2616,10 @@ img {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.registration-grid--geo {
+  margin-top: 18px;
+}
+
 .registration-grid--three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -3323,6 +3327,10 @@ img {
   .registration-grid--three,
   .registration-grid--address {
     grid-template-columns: 1fr;
+  }
+
+  .registration-grid--geo {
+    margin-top: 22px;
   }
 
   .field__label--hidden {

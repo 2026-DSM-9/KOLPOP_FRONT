@@ -2744,7 +2744,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
 
             {addressNotice ? <p className="field__notice">{addressNotice}</p> : null}
 
-            <div className="registration-grid registration-grid--two">
+            <div className="registration-grid registration-grid--two registration-grid--geo">
               <div className="field">
                 <label className="field__label" htmlFor="listing-lat">
                   위도
