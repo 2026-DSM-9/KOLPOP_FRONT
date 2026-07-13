@@ -10,8 +10,6 @@ import {
   loadKakaoPostcodeSdk,
 } from "./lib/kakao.js";
 
-const homeCategories = ["전체", "카페", "음식점", "패션", "전시", "플리마켓", "뷰티", "기타"];
-const formCategories = homeCategories.filter((category) => category !== "전체");
 const facilityOptions = [
   "와이파이",
   "에어컨",
@@ -181,16 +179,10 @@ const createFallbackGallery = (listing) => {
 const createFallbackHashtags = (listing) => [
   findRegionHashtag(listing.address ?? ""),
   findFloorHashtag(listing.title ?? "", listing.detailAddress ?? ""),
-  listing.category === "패션"
-    ? "유동인구많음"
-    : listing.category === "카페"
-      ? "카페거리"
-      : listing.category === "전시"
-        ? "전시추천"
-        : "단기팝업",
+  "단기팝업",
 ];
 const createFallbackDescription = (listing) =>
-  `${listing.title}은 ${listing.address}에 위치한 ${listing.category} 팝업 공간입니다. 접근성이 좋고 공간 구성이 깔끔해 단기 행사와 브랜드 테스트에 활용하기 좋습니다.`;
+  `${listing.title}은 ${listing.address}에 위치한 팝업 공간입니다. 접근성이 좋고 공간 구성이 깔끔해 단기 행사와 브랜드 테스트에 활용하기 좋습니다.`;
 const enrichListing = (listing) => ({
   ...listing,
   facilities:
@@ -222,7 +214,6 @@ const createInitialRegistrationForm = () => ({
   detailAddress: "",
   lat: "",
   lng: "",
-  category: "",
   price: "150000",
   deposit: "1000000",
   area: "66.1",
@@ -256,7 +247,6 @@ const createRegistrationFormFromListing = (listing) => {
     detailAddress: listing.detailAddress ?? "",
     lat: listing.lat !== undefined ? `${listing.lat}` : "",
     lng: listing.lng !== undefined ? `${listing.lng}` : "",
-    category: listing.category ?? "",
     price: listing.price !== undefined ? `${listing.price}` : "150000",
     deposit: listing.deposit !== undefined ? `${listing.deposit}` : "1000000",
     area: normalizeAreaValue(listing.area),
@@ -685,7 +675,6 @@ function ListingCard({ listing, active, onSelect, onOpenDetail }) {
       <div className="listing-card__body">
         <div className="listing-card__top">
           <h3 className="listing-card__title">{listing.title}</h3>
-          <span className="listing-card__tag">{listing.category}</span>
         </div>
         <p className="listing-card__address">{listing.address}</p>
         <div className="listing-card__price-row">
@@ -1098,7 +1087,6 @@ function ListingDetailPage({
               <span className={`listing-card__status detail-heading__status ${listing.status === "모집중" ? "" : "is-secondary"}`}>
                 {listing.status}
               </span>
-              <span className="detail-heading__tag">{listing.category}</span>
             </div>
             <h1>{listing.title}</h1>
             <p>{listing.address}</p>
@@ -1852,7 +1840,6 @@ function StepperField({
 }
 
 function HomePage({ listings, appKey, onOpenDetail }) {
-  const [activeCategory, setActiveCategory] = useState("전체");
   const [query, setQuery] = useState("");
   const [activeListingId, setActiveListingId] = useState(listings[0]?.id ?? null);
   const [mapVisibleIds, setMapVisibleIds] = useState(null);
@@ -1867,12 +1854,9 @@ function HomePage({ listings, appKey, onOpenDetail }) {
 
   const matchesPanelFilter = (listing) => {
     const keyword = query.trim().toLowerCase();
-    const matchesCategory = activeCategory === "전체" || listing.category === activeCategory;
-    const matchesQuery =
-      keyword.length === 0 ||
-      [listing.title, listing.address, listing.category].join(" ").toLowerCase().includes(keyword);
+    const matchesQuery = keyword.length === 0 || [listing.title, listing.address].join(" ").toLowerCase().includes(keyword);
 
-    return matchesCategory && matchesQuery;
+    return matchesQuery;
   };
 
   const panelFilteredListings = listings.filter(matchesPanelFilter);
@@ -1907,7 +1891,7 @@ function HomePage({ listings, appKey, onOpenDetail }) {
     }
 
     focusListings(panelFilteredListings);
-  }, [activeCategory, focusListings, mapReady, query]);
+  }, [focusListings, mapReady, query]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -1970,19 +1954,6 @@ function HomePage({ listings, appKey, onOpenDetail }) {
             </button>
           </form>
 
-          <div className="category-chips">
-            {homeCategories.map((category) => (
-              <button
-                key={category}
-                className={`chip ${activeCategory === category ? "is-active" : ""}`}
-                type="button"
-                onClick={() => setActiveCategory(category)}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-
           <div className={`map-preview ${mapReady ? "" : "is-fallback"}`}>
             <div className="map-preview__toolbar">
               <button className="map-preview__action" type="button" disabled={!mapReady} onClick={resetMapBounds}>
@@ -2028,7 +1999,7 @@ function HomePage({ listings, appKey, onOpenDetail }) {
           </div>
         ) : (
           <div className="empty-state">
-            <p>조건에 맞는 매물이 없어요. 다른 카테고리나 검색어로 다시 찾아보세요.</p>
+            <p>조건에 맞는 매물이 없어요. 다른 검색어로 다시 찾아보세요.</p>
           </div>
         )}
       </section>
@@ -2544,7 +2515,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
 
     onSubmitListing({
       title: form.title.trim() || "새로운 팝업 공간",
-      category: form.category || "기타",
+      category: editingListing?.category ?? "기타",
       address,
       baseAddress,
       detailAddress,
@@ -2811,23 +2782,6 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
 
           <section className="registration-section">
             <h2>상세 정보</h2>
-
-            <div className="field">
-              <span className="field__label">카테고리 *</span>
-              <div className="toggle-chip-set">
-                {formCategories.map((category) => (
-                  <button
-                    key={category}
-                    className={`toggle-chip ${form.category === category ? "is-active" : ""}`}
-                    type="button"
-                    aria-pressed={form.category === category}
-                    onClick={() => updateField("category", form.category === category ? "" : category)}
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             <div className="registration-grid registration-grid--three">
               <div className="field">
