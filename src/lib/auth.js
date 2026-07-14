@@ -21,16 +21,24 @@ const getApiBaseUrl = () => {
   return API_BASE_URL;
 };
 
+const getNetworkErrorMessage = () => "API 서버에 연결할 수 없습니다. BASE_URL과 서버 실행 상태를 확인해주세요.";
+
 const requestAuth = async (path, options = {}) => {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...options.headers,
-    },
-    ...options,
-  });
+  let response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...options.headers,
+      },
+      ...options,
+    });
+  } catch {
+    throw new AuthApiError(getNetworkErrorMessage());
+  }
 
   const payload = await response.json().catch(() => null);
   const apiError = payload?.error;
@@ -90,13 +98,19 @@ export const reissueAuthSession = async () => {
   }
 
   const authorization = refreshToken.startsWith("Bearer ") ? refreshToken : `Bearer ${refreshToken}`;
-  const response = await fetch(`${getApiBaseUrl()}/auth/reissue`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      Authorization: authorization,
-    },
-  });
+  let response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}/auth/reissue`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: authorization,
+      },
+    });
+  } catch {
+    throw new AuthApiError(getNetworkErrorMessage());
+  }
   const payload = await response.json().catch(() => null);
   const apiError = payload?.error;
 
@@ -125,10 +139,16 @@ export const fetchWithAuth = async (input, options = {}, { retry = true } = {}) 
     ...options.headers,
     Authorization: getAuthorizationHeader(),
   };
-  const response = await fetch(input, {
-    ...options,
-    headers,
-  });
+  let response;
+
+  try {
+    response = await fetch(input, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new AuthApiError(getNetworkErrorMessage());
+  }
 
   if (!isAuthFailure(response) || !retry) {
     return response;

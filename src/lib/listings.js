@@ -1,5 +1,5 @@
 import { normalizeApiErrorMessage } from "./apiError.js";
-import { fetchWithAuth } from "./auth.js";
+import { fetchWithAuth, getSavedAuthSession } from "./auth.js";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
@@ -38,7 +38,11 @@ const requestListings = async (path, { method = "GET", searchParams = {}, body, 
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   };
-  const response = auth ? await fetchWithAuth(url, requestOptions) : await fetch(url, requestOptions);
+  const requestUrl = url.toString();
+  const shouldUseAuth = auth || Boolean(getSavedAuthSession()?.accessToken);
+  const response = shouldUseAuth
+    ? await fetchWithAuth(requestUrl, requestOptions)
+    : await fetch(requestUrl, requestOptions);
 
   const payload = await response.json().catch(() => null);
   const apiError = payload?.error;

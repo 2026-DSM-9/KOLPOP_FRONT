@@ -2038,11 +2038,19 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
   const [query, setQuery] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
   const [activeListingId, setActiveListingId] = useState(listings[0]?.id ?? null);
-  const [mapVisibleIds, setMapVisibleIds] = useState(null);
-  const [nearbyListingIds, setNearbyListingIds] = useState(null);
   const [mapListingMessage, setMapListingMessage] = useState("");
-  const latestBoundsKeyRef = useRef("");
-  const latestBoundsRef = useRef(null);
+  const loadedInitialListingsRef = useRef(false);
+
+  useEffect(() => {
+    if (!onFetchListingsForDiscovery || loadedInitialListingsRef.current) {
+      return;
+    }
+
+    loadedInitialListingsRef.current = true;
+    onFetchListingsForDiscovery().catch((error) => {
+      setMapListingMessage(error.message || "매물 정보를 불러오지 못했습니다.");
+    });
+  }, [onFetchListingsForDiscovery]);
 
   useEffect(() => {
     if (listings.some((listing) => listing.id === activeListingId)) {
@@ -2060,58 +2068,24 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
   };
 
   const panelFilteredListings = listings.filter(matchesPanelFilter);
-  const visibleListings = panelFilteredListings.filter(
-    (listing) =>
-      (mapVisibleIds === null || mapVisibleIds.has(listing.id)) &&
-      (nearbyListingIds === null || nearbyListingIds.has(listing.id)),
-  );
+  const visibleListings = panelFilteredListings;
 
-  const handleBoundsChange = async (bounds) => {
-    if (!onFetchListingsForDiscovery) {
-      return;
-    }
-
-    latestBoundsRef.current = bounds;
-
-    const boundsKey = [...Object.values(bounds), query.trim()]
-      .map((value) => Number(value).toFixed(5))
-      .join(":");
-
-    if (latestBoundsKeyRef.current === boundsKey) {
-      return;
-    }
-
-    latestBoundsKeyRef.current = boundsKey;
-
-    try {
-      setMapListingMessage("");
-      const data = await onFetchListingsForDiscovery({
-        bounds,
-        keyword: query,
-      });
-      setNearbyListingIds(new Set(data.nearbyListings.listings.map((listing) => listing.id)));
-    } catch (error) {
-      setNearbyListingIds(null);
-      setMapListingMessage(error.message || "지도 영역의 매물을 불러오지 못했습니다.");
-    }
-  };
+  const handleBoundsChange = () => {};
 
   useEffect(() => {
-    if (visibleListings.some((listing) => listing.id === activeListingId)) {
+    if (panelFilteredListings.some((listing) => listing.id === activeListingId)) {
       return;
     }
 
-    setActiveListingId(visibleListings[0]?.id ?? null);
-  }, [activeListingId, visibleListings]);
+    setActiveListingId(panelFilteredListings[0]?.id ?? null);
+  }, [activeListingId, panelFilteredListings]);
 
   const { mapReady, mapMessage, mapRef, focusListings, panToListing, searchLocation, resetMapBounds } = useKakaoMap({
     appKey,
     listings,
     activeListingId,
     panelFilter: matchesPanelFilter,
-    onVisibleIdsChange: (nextIds) => {
-      setMapVisibleIds(nextIds === null ? null : new Set(nextIds));
-    },
+    onVisibleIdsChange: () => {},
     onBoundsChange: handleBoundsChange,
     onSelectListing: (listingId) => {
       setActiveListingId(listingId);
@@ -2125,7 +2099,7 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
     }
 
     focusListings(panelFilteredListings);
-  }, [focusListings, mapReady, query]);
+  }, [focusListings, listings.length, mapReady, query]);
 
   const handleSearchSubmit = async (event) => {
     event.preventDefault();
@@ -2134,26 +2108,10 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
-      latestBoundsKeyRef.current = "";
-      if (latestBoundsRef.current) {
-        await handleBoundsChange(latestBoundsRef.current);
-      }
-
       if (mapReady) {
         resetMapBounds();
       }
       return;
-    }
-
-    latestBoundsKeyRef.current = "";
-
-    if (latestBoundsRef.current) {
-      await handleBoundsChange(latestBoundsRef.current);
-      return;
-    }
-
-    if (panelFilteredListings.length > 0) {
-      setActiveListingId(panelFilteredListings[0].id);
     }
 
     if (!mapReady) {
@@ -2162,6 +2120,7 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
     }
 
     if (panelFilteredListings.length > 0) {
+      setActiveListingId(panelFilteredListings[0].id);
       focusListings(panelFilteredListings);
 
       if (panelFilteredListings.length === 1) {
@@ -2248,7 +2207,7 @@ function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery 
             <p>
               {mapListingMessage ||
                 (mapReady
-                  ? "지도를 움직이면 리스트가 실시간으로 업데이트됩니다"
+                  ? "검색어에 맞는 매물을 지도와 목록에 함께 표시합니다"
                   : "카카오맵 키와 서비스 설정이 완료되면 지도 범위와 리스트가 실시간으로 연동됩니다")}
             </p>
           </div>
@@ -3457,8 +3416,9 @@ export default function App() {
     }
 
     let cancelled = false;
+    const hasFallbackListing = Boolean(selectedListing);
     setDetailState({
-      loading: true,
+      loading: !hasFallbackListing,
       error: "",
     });
 
@@ -3497,7 +3457,7 @@ export default function App() {
 
         setDetailState({
           loading: false,
-          error: error.message || "매물 상세 정보를 불러오지 못했습니다.",
+          error: hasFallbackListing ? "" : error.message || "매물 상세 정보를 불러오지 못했습니다.",
         });
       });
 
@@ -3602,20 +3562,54 @@ export default function App() {
       image: imageUrls[0] || "",
       gallery: imageUrls,
     });
+    const syncedDraft = enrichListing({
+      ...draft,
+      image: imageUrls[0] || draft.image || "",
+      gallery: imageUrls,
+      ownedByMe: true,
+    });
+    const refreshMyListings = () => {
+      reloadMyListings().catch((error) => {
+        console.warn("Failed to refresh my listings after save.", error);
+      });
+    };
 
     if (editingListingId) {
       await updateListingRequest(editingListingId, payload);
-      await reloadMyListings();
+      setListings((current) =>
+        current.map((listing) =>
+          listing.id === editingListingId
+            ? {
+                ...listing,
+                ...syncedDraft,
+                id: editingListingId,
+              }
+            : listing,
+        ),
+      );
+      refreshMyListings();
       setEditingListingId(null);
       setCurrentPage("mypage");
       return;
     }
 
     const result = await createListing(payload);
-    await reloadMyListings();
+    const createdListingId = Number(result?.listingId);
 
-    if (result?.listingId) {
-      setSelectedListingId(Number(result.listingId));
+    if (Number.isFinite(createdListingId)) {
+      setListings((current) => [
+        {
+          ...syncedDraft,
+          id: createdListingId,
+        },
+        ...current.filter((listing) => listing.id !== createdListingId),
+      ]);
+    }
+
+    refreshMyListings();
+
+    if (Number.isFinite(createdListingId)) {
+      setSelectedListingId(createdListingId);
       setDetailReturnPage("mypage");
       setCurrentPage("detail");
       return;
