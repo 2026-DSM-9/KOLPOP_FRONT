@@ -1,7 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { listingSeed } from "./data/listings.js";
-import { reservationSeed } from "./data/reservations.js";
-import { chatSeed } from "./data/chats.js";
 import { useKakaoMap } from "./hooks/useKakaoMap.js";
 import {
   getKakaoMapErrorMessage,
@@ -9,6 +6,33 @@ import {
   loadKakaoMapsSdk,
   loadKakaoPostcodeSdk,
 } from "./lib/kakao.js";
+import {
+  checkLoginId,
+  clearAuthSession,
+  getSavedAuthSession,
+  loginLandlord,
+  saveAuthSession,
+  sendSignupCode,
+  signupLandlord,
+  verifySignupCode,
+} from "./lib/auth.js";
+import {
+  closeListingRequest,
+  createListing,
+  deleteListingRequest,
+  fetchListingDetail,
+  fetchListingsForDiscovery,
+  fetchMyListings,
+  updateListingRequest,
+} from "./lib/listings.js";
+import { uploadFile } from "./lib/files.js";
+import { createChatRoom, fetchChatMessages, fetchChatRooms } from "./lib/chat.js";
+import { fetchMyPage, updateMyPage } from "./lib/mypage.js";
+import {
+  approveReservationRequest,
+  fetchManagementReservations,
+  rejectReservationRequest,
+} from "./lib/reservations.js";
 
 const facilityOptions = [
   "와이파이",
@@ -45,7 +69,6 @@ const restrictionOptions = [
   "소음 발생 업종 제한",
   "심야 영업 제한 (24시까지)",
 ];
-const existingUsernameSeed = ["colpopadmin", "landlord01", "kimimdae", "popupboss"];
 const navItems = [
   { label: "홈", page: "home", icon: "home" },
   { label: "매물 등록", page: "register", icon: "plus" },
@@ -53,25 +76,19 @@ const navItems = [
   { label: "채팅", page: "chat", icon: "chat" },
   { label: "마이페이지", page: "mypage", icon: "user" },
 ];
+const protectedPages = new Set(["register", "reservation", "chat", "mypage"]);
 const priceStep = 10000;
 const depositStep = 100000;
 const myProfileSeed = {
-  name: "김임대",
-  email: "landlord@colpop.kr",
-  phone: "010-1234-5678",
-  address: "서울 강남구 테헤란로 123",
-  detailAddress: "101동 202호",
-  bio: "홍대와 강남권 중심으로 단기 팝업 공간을 직접 운영하고 있습니다. 브랜드 분위기에 맞는 공간 매칭을 도와드려요.",
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+  detailAddress: "",
+  bio: "",
 };
-const defaultMyListingIds = [1, 2, 3, 5, 7, 8];
-const myListingReservationCounts = {
-  1: 8,
-  2: 5,
-  3: 12,
-  5: 15,
-  7: 4,
-  8: 7,
-};
+const defaultMyListingIds = [];
+const myListingReservationCounts = {};
 const reservationStatusMeta = {
   pending: {
     label: "승인 대기",
@@ -86,7 +103,6 @@ const reservationStatusMeta = {
     className: "is-rejected",
   },
 };
-const listingImagePool = Array.from({ length: 8 }, (_, index) => `/assets/listing-${index + 1}.png`);
 const categoryFacilityDefaults = {
   패션: ["와이파이", "행거", "피팅룸", "조명", "대형거울"],
   카페: ["와이파이", "에어컨", "테이블", "의자", "카운터"],
@@ -160,29 +176,6 @@ const splitPresetAndCustomEntries = (items, presetOptions) => {
 };
 const normalizeAreaValue = (area) => `${area ?? ""}`.replace(/[^\d.]/g, "");
 const formatHashtagInput = (hashtags) => hashtags.join(", ");
-const findRegionHashtag = (address) => {
-  const regionKeywords = ["홍대", "연남", "합정", "성수", "강남", "신사", "청담", "한남", "용산", "을지로", "종로", "압구정"];
-
-  return regionKeywords.find((keyword) => address.includes(keyword)) ?? "팝업";
-};
-const findFloorHashtag = (title, detailAddress = "") => {
-  const matched = `${title} ${detailAddress}`.match(/(지하\s*\d+층|\d+층)/);
-
-  return matched ? matched[1].replace(/\s+/g, "") : "팝업공간";
-};
-const createFallbackGallery = (listing) => {
-  const firstFallback = listingImagePool[listing.id % listingImagePool.length];
-  const secondFallback = listingImagePool[(listing.id + 3) % listingImagePool.length];
-
-  return Array.from(new Set([listing.image, firstFallback, secondFallback])).filter(Boolean);
-};
-const createFallbackHashtags = (listing) => [
-  findRegionHashtag(listing.address ?? ""),
-  findFloorHashtag(listing.title ?? "", listing.detailAddress ?? ""),
-  "단기팝업",
-];
-const createFallbackDescription = (listing) =>
-  `${listing.title}은 ${listing.address}에 위치한 팝업 공간입니다. 접근성이 좋고 공간 구성이 깔끔해 단기 행사와 브랜드 테스트에 활용하기 좋습니다.`;
 const enrichListing = (listing) => ({
   ...listing,
   facilities:
@@ -193,19 +186,21 @@ const enrichListing = (listing) => ({
     listing.restrictions && listing.restrictions.length > 0
       ? listing.restrictions
       : categoryRestrictionDefaults[listing.category] ?? ["없음"],
-  availableFrom: listing.availableFrom ?? "2026-07-20",
-  availableTo: listing.availableTo ?? "2026-12-31",
-  minDays: listing.minDays ?? "1",
-  maxDays: listing.maxDays ?? "14",
-  description: listing.description?.trim() || createFallbackDescription(listing),
+  availableFrom: listing.availableFrom ?? "",
+  availableTo: listing.availableTo ?? "",
+  minDays: listing.minDays ?? "",
+  maxDays: listing.maxDays ?? "",
+  description: listing.description?.trim() || "",
   hashtags:
     listing.hashtags && listing.hashtags.length > 0
       ? listing.hashtags.map(normalizeHashtag)
-      : createFallbackHashtags(listing),
+      : [],
   gallery:
     listing.gallery && listing.gallery.length > 0
       ? Array.from(new Set(listing.gallery))
-      : createFallbackGallery(listing),
+      : listing.image
+        ? [listing.image]
+        : [],
 });
 
 const createInitialRegistrationForm = () => ({
@@ -263,6 +258,42 @@ const createRegistrationFormFromListing = (listing) => {
     description: listing.description ?? "",
     hashtags: formatHashtagInput(listing.hashtags ?? []),
   };
+};
+
+const createListingPayload = (draft) => ({
+  title: draft.title,
+  imageUrls: draft.gallery?.length > 0 ? draft.gallery : draft.image ? [draft.image] : [],
+  address: draft.baseAddress || draft.address,
+  detailAddress: draft.detailAddress,
+  latitude: Number(draft.lat) || 0,
+  longitude: Number(draft.lng) || 0,
+  dailyFee: Number(draft.price) || 0,
+  deposit: Number(draft.deposit) || 0,
+  area: Number(normalizeAreaValue(draft.area)) || 0,
+  facilities: draft.facilities ?? [],
+  industryRestrictions: draft.industryRestrictions ?? [],
+  additionalRestrictions: draft.additionalRestrictions ?? [],
+  operatingStartDate: draft.availableFrom,
+  operatingEndDate: draft.availableTo,
+  minOperatingDays: Number(draft.minDays) || 0,
+  maxOperatingDays: Number(draft.maxDays) || 0,
+  description: draft.description,
+  hashtags: draft.hashtags ?? [],
+});
+
+const resolveListingImageUrls = async (imagePreviews = []) => {
+  const uploadedImages = await Promise.all(
+    imagePreviews.map(async (preview) => {
+      if (preview.file) {
+        const uploadedFile = await uploadFile(preview.file);
+        return uploadedFile?.url || "";
+      }
+
+      return preview.url || preview.src || "";
+    }),
+  );
+
+  return uploadedImages.filter(Boolean);
 };
 
 const readFileAsDataUrl = (file) =>
@@ -607,7 +638,7 @@ function NavIcon({ type }) {
   );
 }
 
-function SiteHeader({ currentPage, onNavigate }) {
+function SiteHeader({ currentPage, isAuthenticated, onNavigate, onLogout }) {
   return (
     <header className="site-header">
       <div className="header-shell">
@@ -634,14 +665,22 @@ function SiteHeader({ currentPage, onNavigate }) {
           ))}
         </nav>
 
-        <div className="header-actions">
-          <button className="header-actions__link" type="button" onClick={() => onNavigate("login")}>
-            로그인
-          </button>
-          <button className="header-actions__button" type="button" onClick={() => onNavigate("signup")}>
-            회원가입
-          </button>
-        </div>
+        {isAuthenticated ? (
+          <div className="header-actions">
+            <button className="header-actions__button" type="button" onClick={onLogout}>
+              로그아웃
+            </button>
+          </div>
+        ) : (
+          <div className="header-actions">
+            <button className="header-actions__link" type="button" onClick={() => onNavigate("login")}>
+              로그인
+            </button>
+            <button className="header-actions__button" type="button" onClick={() => onNavigate("signup")}>
+              회원가입
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -669,7 +708,7 @@ function ListingCard({ listing, active, onSelect, onOpenDetail }) {
       }}
     >
       <div className="listing-card__media">
-        <img src={listing.image} alt={listing.title} loading="lazy" />
+        {listing.image ? <img src={listing.image} alt={listing.title} loading="lazy" /> : null}
         <span className={`listing-card__status ${recruiting ? "" : "is-secondary"}`}>{listing.status}</span>
       </div>
       <div className="listing-card__body">
@@ -719,7 +758,7 @@ function OwnedListingCard({ listing, reservationCount, onEdit, onDelete, onClose
       }}
     >
       <div className="owned-listing-card__media">
-        <img src={listing.image} alt={listing.title} loading="lazy" />
+        {listing.image ? <img src={listing.image} alt={listing.title} loading="lazy" /> : null}
         <span className={`owned-listing-card__status ${closed ? "is-closed" : ""}`}>{listing.status}</span>
       </div>
 
@@ -775,9 +814,12 @@ function MyPage({
 }) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileDraft, setProfileDraft] = useState(profile);
+  const [profileError, setProfileError] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const myListings = listings.filter((listing) => listing.ownedByMe || defaultMyListingIds.includes(listing.id));
   const infoRows = [
     { label: "이름", field: "name", value: profileDraft.name },
+    { label: "이메일", field: "email", value: profileDraft.email },
     { label: "휴대폰 번호", field: "phone", value: formatPhoneNumber(profileDraft.phone) },
     { label: "자기소개", field: "bio", value: profileDraft.bio, multiline: true },
   ];
@@ -793,16 +835,26 @@ function MyPage({
     }));
   };
 
-  const handleSaveProfile = () => {
-    onUpdateProfile({
-      ...profileDraft,
-      phone: formatPhoneNumber(profileDraft.phone),
-    });
-    setIsEditingProfile(false);
+  const handleSaveProfile = async () => {
+    setProfileError("");
+    setIsSavingProfile(true);
+
+    try {
+      await onUpdateProfile({
+        ...profileDraft,
+        phone: formatPhoneNumber(profileDraft.phone),
+      });
+      setIsEditingProfile(false);
+    } catch (error) {
+      setProfileError(error.message || "회원 정보를 저장하지 못했습니다.");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleCancelProfileEdit = () => {
     setProfileDraft(profile);
+    setProfileError("");
     setIsEditingProfile(false);
   };
 
@@ -824,10 +876,10 @@ function MyPage({
             <div className="mypage-info-card__header-actions">
               {isEditingProfile ? (
                 <>
-                  <button type="button" onClick={handleSaveProfile}>
-                    저장
+                  <button type="button" disabled={isSavingProfile} onClick={handleSaveProfile}>
+                    {isSavingProfile ? "저장 중" : "저장"}
                   </button>
-                  <button className="is-secondary" type="button" onClick={handleCancelProfileEdit}>
+                  <button className="is-secondary" type="button" disabled={isSavingProfile} onClick={handleCancelProfileEdit}>
                     취소
                   </button>
                 </>
@@ -838,6 +890,8 @@ function MyPage({
               )}
             </div>
           </div>
+
+          {profileError ? <p className="signup-form__error">{profileError}</p> : null}
 
           <div className="mypage-info-card__rows">
             {infoRows.map((row) => (
@@ -886,7 +940,7 @@ function MyPage({
                 <OwnedListingCard
                   key={listing.id}
                   listing={listing}
-                  reservationCount={myListingReservationCounts[listing.id] ?? 0}
+                  reservationCount={listing.reservationCount ?? myListingReservationCounts[listing.id] ?? 0}
                   onEdit={onEditListing}
                   onDelete={onDeleteListing}
                   onCloseRecruitment={onCloseRecruitment}
@@ -1009,12 +1063,17 @@ function ListingDetailPage({
   listing,
   profile,
   reservationCount,
+  isLoading,
+  errorMessage,
   appKey,
   onBack,
+  onOpenChat,
 }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const gallery = listing.gallery?.length > 0 ? listing.gallery : [listing.image];
+  const gallery = listing.gallery?.length > 0 ? listing.gallery : listing.image ? [listing.image] : [];
+  const activeImage = gallery[activeImageIndex];
   const sampleDays = Math.min(Number(listing.maxDays) || 7, 7);
+  const totalFee = listing.sevenDayTotalFee && sampleDays === 7 ? listing.sevenDayTotalFee : listing.price * sampleDays;
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -1032,10 +1091,16 @@ function ListingDetailPage({
           <span>뒤로가기</span>
         </button>
 
+        {isLoading || errorMessage ? (
+          <div className="detail-status" role="status">
+            {isLoading ? "매물 상세 정보를 불러오는 중입니다." : errorMessage}
+          </div>
+        ) : null}
+
         <div className="detail-hero">
           <section className="detail-gallery-card">
             <div className="detail-gallery__stage">
-              <img src={gallery[activeImageIndex]} alt={`${listing.title} 대표 이미지`} />
+              {activeImage ? <img src={activeImage} alt={`${listing.title} 대표 이미지`} /> : null}
               {gallery.length > 1 ? (
                 <>
                   <button
@@ -1091,7 +1156,7 @@ function ListingDetailPage({
                   <NavIcon type="user" />
                 </span>
                 <div>
-                  <strong>{profile.name || "임대인"}</strong>
+                  <strong>{listing.landlordName || profile.name || "임대인"}</strong>
                   <p>연락은 채팅을 이용해 주세요</p>
                 </div>
               </div>
@@ -1105,6 +1170,17 @@ function ListingDetailPage({
                   <dd>{formatNumber(reservationCount)}</dd>
                 </div>
               </dl>
+              <div className="detail-side-card__actions">
+                <button
+                  className="detail-side-card__primary"
+                  type="button"
+                  disabled={!listing.landlordId}
+                  onClick={() => onOpenChat?.(listing)}
+                >
+                  <NavIcon type="chat" />
+                  <span>채팅하기</span>
+                </button>
+              </div>
             </section>
           </aside>
         </div>
@@ -1137,7 +1213,7 @@ function ListingDetailPage({
               </div>
               <div>
                 <span>총 이용료 ({sampleDays}일 기준)</span>
-                <strong>{formatPrice(listing.price * sampleDays)}원</strong>
+                <strong>{formatPrice(totalFee)}원</strong>
               </div>
             </div>
           </section>
@@ -1146,9 +1222,9 @@ function ListingDetailPage({
             <h2>운영 가능 기간</h2>
             <div className="detail-period-grid">
               <div className="detail-period-item">
-                <span className="detail-period-item__icon is-blue">
+                <div className="detail-period-item__icon is-blue">
                   <NavIcon type="calendar" />
-                </span>
+                </div>
                 <div>
                   <span>이용 가능 기간</span>
                   <strong>
@@ -1157,9 +1233,9 @@ function ListingDetailPage({
                 </div>
               </div>
               <div className="detail-period-item">
-                <span className="detail-period-item__icon is-orange">
+                <div className="detail-period-item__icon is-orange">
                   <NavIcon type="clock" />
-                </span>
+                </div>
                 <div>
                   <span>최소/최대 운영 일수</span>
                   <strong>
@@ -1258,11 +1334,13 @@ function DateField({ id, label, value, onChange, required = false }) {
 
 function LoginPage({ onSubmit, onNavigateSignup }) {
   const [form, setForm] = useState({
-    username: "",
+    loginId: "",
     password: "",
     autoLogin: false,
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const updateField = (field, value) => {
     setForm((current) => ({
@@ -1271,9 +1349,18 @@ function LoginPage({ onSubmit, onNavigateSignup }) {
     }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    onSubmit(form);
+    setSubmitError("");
+    setIsSubmitting(true);
+
+    try {
+      await onSubmit(form);
+    } catch (error) {
+      setSubmitError(error.message || "로그인에 실패했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1287,16 +1374,17 @@ function LoginPage({ onSubmit, onNavigateSignup }) {
         <div className="login-card">
           <form className="login-form" onSubmit={handleSubmit}>
             <div className="field login-form__field">
-              <label className="field__label" htmlFor="login-username">
+              <label className="field__label" htmlFor="login-id">
                 아이디
               </label>
               <input
-                id="login-username"
+                id="login-id"
                 className="field__input"
                 type="text"
                 placeholder="아이디를 입력해주세요"
-                value={form.username}
-                onChange={(event) => updateField("username", event.target.value)}
+                value={form.loginId}
+                onChange={(event) => updateField("loginId", event.target.value)}
+                autoComplete="username"
                 required
               />
             </div>
@@ -1313,6 +1401,7 @@ function LoginPage({ onSubmit, onNavigateSignup }) {
                   placeholder="비밀번호를 입력해주세요"
                   value={form.password}
                   onChange={(event) => updateField("password", event.target.value)}
+                  autoComplete="current-password"
                   required
                 />
                 <button
@@ -1337,14 +1426,12 @@ function LoginPage({ onSubmit, onNavigateSignup }) {
                 <span className="login-checkbox__box" aria-hidden="true" />
                 <span>자동 로그인</span>
               </label>
-
-              <button className="login-form__helper" type="button">
-                아이디/비밀번호 찾기
-              </button>
             </div>
 
-            <button className="submit-button login-form__submit" type="submit">
-              로그인
+            {submitError ? <p className="signup-form__error">{submitError}</p> : null}
+
+            <button className="submit-button login-form__submit" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "로그인 중..." : "로그인"}
             </button>
           </form>
         </div>
@@ -1360,7 +1447,7 @@ function LoginPage({ onSubmit, onNavigateSignup }) {
   );
 }
 
-function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
+function SignupPage({ onNavigateLogin, onSubmit, onCheckLoginId, onSendPhoneCode, onVerifyPhoneCode }) {
   const [form, setForm] = useState({
     username: "",
     name: "",
@@ -1382,6 +1469,21 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
     message: "",
     code: "",
   });
+  const [pendingAction, setPendingAction] = useState("");
+  const passwordPattern = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+  const isPasswordFormatValid = passwordPattern.test(form.password);
+  const isPasswordConfirmTouched = form.passwordConfirm.length > 0;
+  const isPasswordMatched = form.password.length > 0 && form.password === form.passwordConfirm;
+  const isUsernameVerified =
+    usernameCheck.status === "success" &&
+    usernameCheck.checkedValue === normalizeUsername(form.username);
+  const isPhoneVerified = phoneVerification.status === "verified";
+  const canSubmitSignup =
+    isUsernameVerified &&
+    isPasswordFormatValid &&
+    isPasswordMatched &&
+    isPhoneVerified &&
+    pendingAction !== "signup";
 
   const updateField = (field, value) => {
     setForm((current) => ({
@@ -1406,7 +1508,7 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
     }
   };
 
-  const handleUsernameCheck = () => {
+  const handleUsernameCheck = async () => {
     const normalizedUsername = normalizeUsername(form.username);
     const isValidFormat = /^[a-zA-Z0-9]{4,20}$/.test(form.username.trim());
 
@@ -1419,12 +1521,17 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
       return;
     }
 
-    if (takenUsernames.includes(normalizedUsername)) {
+    setPendingAction("check-id");
+
+    try {
+      await onCheckLoginId(normalizedUsername);
+    } catch (error) {
       setUsernameCheck({
         status: "error",
-        message: "이미 사용 중인 아이디입니다.",
+        message: error.message || "이미 사용 중인 아이디입니다.",
         checkedValue: normalizedUsername,
       });
+      setPendingAction("");
       return;
     }
 
@@ -1433,34 +1540,44 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
       message: "사용 가능한 아이디입니다.",
       checkedValue: normalizedUsername,
     });
+    setPendingAction("");
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (
-      usernameCheck.status !== "success" ||
-      usernameCheck.checkedValue !== normalizeUsername(form.username)
-    ) {
+    if (!isUsernameVerified) {
       setSubmitError("아이디 중복 확인을 먼저 진행해주세요.");
       return;
     }
 
-    if (form.password !== form.passwordConfirm) {
+    if (!isPasswordFormatValid) {
+      setSubmitError("비밀번호는 8자 이상, 영문+숫자+특수문자를 포함해야 합니다.");
+      return;
+    }
+
+    if (!isPasswordMatched) {
       setSubmitError("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
       return;
     }
 
-    if (phoneVerification.status !== "verified") {
+    if (!isPhoneVerified) {
       setSubmitError("휴대폰 인증을 완료해주세요.");
       return;
     }
 
     setSubmitError("");
-    onSubmit(form);
+    setPendingAction("signup");
+
+    try {
+      await onSubmit(form);
+    } catch (error) {
+      setSubmitError(error.message || "회원가입에 실패했습니다.");
+      setPendingAction("");
+    }
   };
 
-  const handleSendPhoneCode = () => {
+  const handleSendPhoneCode = async () => {
     const isValidPhoneNumber = /^010-\d{4}-\d{4}$/.test(form.phone.trim());
 
     if (!isValidPhoneNumber) {
@@ -1472,18 +1589,31 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
       return;
     }
 
-    setPhoneVerification((current) => ({
-      status: "sent",
-      message:
-        current.status === "sent" || current.status === "verified"
-          ? "인증번호를 다시 전송했습니다."
-          : "인증번호를 전송했습니다.",
-      code: "",
-    }));
     setSubmitError("");
+    setPendingAction("send-code");
+
+    try {
+      await onSendPhoneCode(form.phone.trim());
+      setPhoneVerification((current) => ({
+        status: "sent",
+        message:
+          current.status === "sent" || current.status === "verified"
+            ? "인증번호를 다시 전송했습니다."
+            : "인증번호를 전송했습니다.",
+        code: "",
+      }));
+    } catch (error) {
+      setPhoneVerification({
+        status: "error",
+        message: error.message || "인증번호 전송에 실패했습니다.",
+        code: "",
+      });
+    } finally {
+      setPendingAction("");
+    }
   };
 
-  const handleVerifyPhoneCode = () => {
+  const handleVerifyPhoneCode = async () => {
     if (phoneVerification.code.trim().length !== 6) {
       setPhoneVerification((current) => ({
         ...current,
@@ -1493,12 +1623,28 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
       return;
     }
 
-    setPhoneVerification((current) => ({
-      ...current,
-      status: "verified",
-      message: "휴대폰 인증이 완료되었습니다.",
-    }));
     setSubmitError("");
+    setPendingAction("verify-code");
+
+    try {
+      await onVerifyPhoneCode({
+        phone: form.phone.trim(),
+        code: phoneVerification.code.trim(),
+      });
+      setPhoneVerification((current) => ({
+        ...current,
+        status: "verified",
+        message: "휴대폰 인증이 완료되었습니다.",
+      }));
+    } catch (error) {
+      setPhoneVerification((current) => ({
+        ...current,
+        status: "error",
+        message: error.message || "인증번호가 올바르지 않습니다.",
+      }));
+    } finally {
+      setPendingAction("");
+    }
   };
 
   return (
@@ -1533,8 +1679,13 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
                   autoComplete="username"
                   required
                 />
-                <button className="signup-inline-field__button is-check" type="button" onClick={handleUsernameCheck}>
-                  중복 확인
+                <button
+                  className="signup-inline-field__button is-check"
+                  type="button"
+                  onClick={handleUsernameCheck}
+                  disabled={pendingAction === "check-id"}
+                >
+                  {pendingAction === "check-id" ? "확인 중" : "중복 확인"}
                 </button>
               </div>
               {usernameCheck.message ? (
@@ -1583,6 +1734,13 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
                   <NavIcon type={showPassword ? "eyeOff" : "eye"} />
                 </button>
               </div>
+              {form.password.length > 0 ? (
+                <p className={`signup-form__message is-${isPasswordFormatValid ? "success" : "error"}`}>
+                  {isPasswordFormatValid
+                    ? "사용 가능한 비밀번호입니다."
+                    : "8자 이상, 영문+숫자+특수문자를 포함해주세요."}
+                </p>
+              ) : null}
             </div>
 
             <div className="field signup-form__field">
@@ -1610,6 +1768,11 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
                   <NavIcon type={showPasswordConfirm ? "eyeOff" : "eye"} />
                 </button>
               </div>
+              {isPasswordConfirmTouched ? (
+                <p className={`signup-form__message is-${isPasswordMatched ? "success" : "error"}`}>
+                  {isPasswordMatched ? "비밀번호가 일치합니다." : "비밀번호가 일치하지 않습니다."}
+                </p>
+              ) : null}
             </div>
           </section>
 
@@ -1637,10 +1800,17 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
                   autoComplete="tel"
                   required
                 />
-                <button className="signup-inline-field__button" type="button" onClick={handleSendPhoneCode}>
-                  {phoneVerification.status === "sent" || phoneVerification.status === "verified"
-                    ? "재전송"
-                    : "인증번호 전송"}
+                <button
+                  className="signup-inline-field__button"
+                  type="button"
+                  onClick={handleSendPhoneCode}
+                  disabled={pendingAction === "send-code"}
+                >
+                  {pendingAction === "send-code"
+                    ? "전송 중"
+                    : phoneVerification.status === "sent" || phoneVerification.status === "verified"
+                      ? "재전송"
+                      : "인증번호 전송"}
                 </button>
               </div>
               {phoneVerification.message ? (
@@ -1688,9 +1858,13 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
                       className={`signup-inline-field__button is-check ${phoneVerification.status === "verified" ? "is-complete" : ""}`}
                       type="button"
                       onClick={handleVerifyPhoneCode}
-                      disabled={phoneVerification.status === "verified"}
+                      disabled={phoneVerification.status === "verified" || pendingAction === "verify-code"}
                     >
-                      {phoneVerification.status === "verified" ? "인증 완료" : "인증 확인"}
+                      {pendingAction === "verify-code"
+                        ? "확인 중"
+                        : phoneVerification.status === "verified"
+                          ? "인증 완료"
+                          : "인증 확인"}
                     </button>
                   </div>
                 </div>
@@ -1715,8 +1889,8 @@ function SignupPage({ onNavigateLogin, onSubmit, takenUsernames }) {
 
           {submitError ? <p className="signup-form__error">{submitError}</p> : null}
 
-          <button className="submit-button signup-form__submit" type="submit">
-            회원가입
+          <button className="submit-button signup-form__submit" type="submit" disabled={!canSubmitSignup}>
+            {pendingAction === "signup" ? "가입 중..." : "회원가입"}
           </button>
 
           <p className="login-signup-copy signup-login-copy">
@@ -1867,11 +2041,15 @@ function StepperField({
   );
 }
 
-function HomePage({ listings, appKey, onOpenDetail }) {
+function HomePage({ listings, appKey, onOpenDetail, onFetchListingsForDiscovery }) {
   const [query, setQuery] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
   const [activeListingId, setActiveListingId] = useState(listings[0]?.id ?? null);
   const [mapVisibleIds, setMapVisibleIds] = useState(null);
+  const [nearbyListingIds, setNearbyListingIds] = useState(null);
+  const [mapListingMessage, setMapListingMessage] = useState("");
+  const latestBoundsKeyRef = useRef("");
+  const latestBoundsRef = useRef(null);
 
   useEffect(() => {
     if (listings.some((listing) => listing.id === activeListingId)) {
@@ -1890,8 +2068,40 @@ function HomePage({ listings, appKey, onOpenDetail }) {
 
   const panelFilteredListings = listings.filter(matchesPanelFilter);
   const visibleListings = panelFilteredListings.filter(
-    (listing) => mapVisibleIds === null || mapVisibleIds.has(listing.id),
+    (listing) =>
+      (mapVisibleIds === null || mapVisibleIds.has(listing.id)) &&
+      (nearbyListingIds === null || nearbyListingIds.has(listing.id)),
   );
+
+  const handleBoundsChange = async (bounds) => {
+    if (!onFetchListingsForDiscovery) {
+      return;
+    }
+
+    latestBoundsRef.current = bounds;
+
+    const boundsKey = [...Object.values(bounds), query.trim()]
+      .map((value) => Number(value).toFixed(5))
+      .join(":");
+
+    if (latestBoundsKeyRef.current === boundsKey) {
+      return;
+    }
+
+    latestBoundsKeyRef.current = boundsKey;
+
+    try {
+      setMapListingMessage("");
+      const data = await onFetchListingsForDiscovery({
+        bounds,
+        keyword: query,
+      });
+      setNearbyListingIds(new Set(data.nearbyListings.listings.map((listing) => listing.id)));
+    } catch (error) {
+      setNearbyListingIds(null);
+      setMapListingMessage(error.message || "지도 영역의 매물을 불러오지 못했습니다.");
+    }
+  };
 
   useEffect(() => {
     if (visibleListings.some((listing) => listing.id === activeListingId)) {
@@ -1909,9 +2119,11 @@ function HomePage({ listings, appKey, onOpenDetail }) {
     onVisibleIdsChange: (nextIds) => {
       setMapVisibleIds(nextIds === null ? null : new Set(nextIds));
     },
+    onBoundsChange: handleBoundsChange,
     onSelectListing: (listingId) => {
       setActiveListingId(listingId);
     },
+    onOpenListing: onOpenDetail,
   });
 
   useEffect(() => {
@@ -1929,9 +2141,21 @@ function HomePage({ listings, appKey, onOpenDetail }) {
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
+      latestBoundsKeyRef.current = "";
+      if (latestBoundsRef.current) {
+        await handleBoundsChange(latestBoundsRef.current);
+      }
+
       if (mapReady) {
         resetMapBounds();
       }
+      return;
+    }
+
+    latestBoundsKeyRef.current = "";
+
+    if (latestBoundsRef.current) {
+      await handleBoundsChange(latestBoundsRef.current);
       return;
     }
 
@@ -2029,9 +2253,10 @@ function HomePage({ listings, appKey, onOpenDetail }) {
               주변 매물 <span>{visibleListings.length.toLocaleString("ko-KR")}</span>건
             </h2>
             <p>
-              {mapReady
-                ? "지도를 움직이면 리스트가 실시간으로 업데이트됩니다"
-                : "카카오맵 키와 서비스 설정이 완료되면 지도 범위와 리스트가 실시간으로 연동됩니다"}
+              {mapListingMessage ||
+                (mapReady
+                  ? "지도를 움직이면 리스트가 실시간으로 업데이트됩니다"
+                  : "카카오맵 키와 서비스 설정이 완료되면 지도 범위와 리스트가 실시간으로 연동됩니다")}
             </p>
           </div>
         </div>
@@ -2059,7 +2284,7 @@ function HomePage({ listings, appKey, onOpenDetail }) {
 }
 
 function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
-  const statusMeta = reservationStatusMeta[reservation.status];
+  const statusMeta = reservationStatusMeta[reservation.status] ?? reservationStatusMeta.pending;
 
   return (
     <article className="reservation-card">
@@ -2068,7 +2293,7 @@ function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
           <h2>{reservation.listingTitle}</h2>
           <span className={`reservation-badge ${statusMeta.className}`}>
             <span className="reservation-badge__dot" />
-            {statusMeta.label}
+            {reservation.statusLabel || statusMeta.label}
           </span>
         </div>
 
@@ -2082,18 +2307,22 @@ function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
       </div>
 
       <div className={`reservation-card__actions ${reservation.status === "rejected" ? "is-muted" : ""}`}>
-        {reservation.status === "pending" ? (
+        {reservation.canApprove || reservation.canReject ? (
           <>
-            <button className="reservation-action reservation-action--approve" type="button" onClick={() => onApprove(reservation.id)}>
-              승인
-            </button>
-            <button className="reservation-action reservation-action--ghost" type="button" onClick={() => onReject(reservation.id)}>
-              거절
-            </button>
+            {reservation.canApprove ? (
+              <button className="reservation-action reservation-action--approve" type="button" onClick={() => onApprove(reservation.id)}>
+                승인
+              </button>
+            ) : null}
+            {reservation.canReject ? (
+              <button className="reservation-action reservation-action--ghost" type="button" onClick={() => onReject(reservation.id)}>
+                거절
+              </button>
+            ) : null}
           </>
         ) : null}
 
-        {reservation.status === "approved" ? (
+        {reservation.canChat ? (
           <button className="reservation-action reservation-action--chat" type="button" onClick={() => onOpenChat(reservation)}>
             <NavIcon type="chat" />
             <span>채팅</span>
@@ -2106,7 +2335,15 @@ function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
   );
 }
 
-function ChatPage({ threads, activeThreadId, onSelectThread, onSendMessage, onCompleteDeal }) {
+function ChatPage({
+  threads,
+  activeThreadId,
+  isLoading,
+  errorMessage,
+  onSelectThread,
+  onSendMessage,
+  onCompleteDeal,
+}) {
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
   const [draftMessage, setDraftMessage] = useState("");
   const imageInputRef = useRef(null);
@@ -2150,8 +2387,10 @@ function ChatPage({ threads, activeThreadId, onSelectThread, onSendMessage, onCo
         <aside className="chat-sidebar">
           <div className="chat-sidebar__intro">
             <h1>채팅</h1>
-            <p>{threads.length}개의 대화방</p>
+            <p>{isLoading ? "대화방을 불러오는 중입니다" : `${threads.length}개의 대화방`}</p>
           </div>
+
+          {errorMessage ? <p className="signup-form__error">{errorMessage}</p> : null}
 
           <div className="chat-thread-list" role="list" aria-label="대화방 목록">
             {threads.map((thread) => {
@@ -2216,6 +2455,11 @@ function ChatPage({ threads, activeThreadId, onSelectThread, onSendMessage, onCo
                     {message.text ? <span className="chat-message__text">{message.text}</span> : null}
                   </div>
                 ))}
+                {activeThread.messages.length === 0 ? (
+                  <div className="empty-state">
+                    <p>아직 메시지가 없습니다.</p>
+                  </div>
+                ) : null}
               </div>
 
               <form className="chat-composer" onSubmit={handleSubmit}>
@@ -2262,30 +2506,23 @@ function ChatPage({ threads, activeThreadId, onSelectThread, onSendMessage, onCo
   );
 }
 
-function ReservationPage({ reservations, onUpdateReservation, onOpenChat }) {
-  const pendingCount = reservations.filter((reservation) => reservation.status === "pending").length;
-  const approvedCount = reservations.filter((reservation) => reservation.status === "approved").length;
+function ReservationPage({ reservations, summary, isLoading, errorMessage, onApproveReservation, onRejectReservation, onOpenChat }) {
+  const pendingCount = summary?.pendingCount ?? reservations.filter((reservation) => reservation.status === "pending").length;
+  const approvedCount = summary?.approvedCount ?? reservations.filter((reservation) => reservation.status === "approved").length;
+  const totalCount = summary?.totalCount ?? reservations.length;
 
-  const handleApprove = (reservationId) => {
-    onUpdateReservation(reservationId, (current) => ({
-      ...current,
-      status: "approved",
-    }));
-  };
-
-  const handleReject = (reservationId) => {
-    onUpdateReservation(reservationId, (current) => ({
-      ...current,
-      status: "rejected",
-    }));
-  };
+  const handleApprove = (reservationId) => onApproveReservation(reservationId);
+  const handleReject = (reservationId) => onRejectReservation(reservationId);
 
   return (
     <section className="reservation-page">
       <div className="reservation-shell">
         <div className="page-intro reservation-intro">
           <h1>예약 관리</h1>
+          {isLoading ? <p>예약을 불러오는 중입니다</p> : null}
         </div>
+
+        {errorMessage ? <p className="signup-form__error">{errorMessage}</p> : null}
 
         <div className="reservation-summary-grid" aria-label="예약 요약">
           <article className="reservation-summary-card">
@@ -2298,7 +2535,7 @@ function ReservationPage({ reservations, onUpdateReservation, onOpenChat }) {
           </article>
           <article className="reservation-summary-card">
             <span className="reservation-summary-card__label">전체 예약</span>
-            <strong className="reservation-summary-card__value is-total">{reservations.length}</strong>
+            <strong className="reservation-summary-card__value is-total">{totalCount}</strong>
           </article>
         </div>
 
@@ -2331,21 +2568,28 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const [addressNotice, setAddressNotice] = useState("");
   const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [imageError, setImageError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState(createInitialRegistrationForm);
   const isEditing = Boolean(editingListing);
 
   useEffect(() => {
     if (editingListing) {
+      const editingImages =
+        editingListing.gallery?.length > 0
+          ? editingListing.gallery
+          : editingListing.image
+            ? [editingListing.image]
+            : [];
+
       setForm(createRegistrationFormFromListing(editingListing));
       setPhotoPreviews(
-        editingListing.image
-          ? [
-              {
-                name: editingListing.title || "대표 사진",
-                src: editingListing.image,
-              },
-            ]
-          : [],
+        editingImages.map((image, index) => ({
+          name: `${editingListing.title || "매물 사진"} ${index + 1}`,
+          src: image,
+          url: image,
+        })),
       );
     } else {
       setForm(createInitialRegistrationForm());
@@ -2355,6 +2599,9 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
     setDragging(false);
     setAddressNotice("");
     setIsAddressLoading(false);
+    setImageError("");
+    setSubmitError("");
+    setIsSubmitting(false);
   }, [editingListing]);
 
   const updateField = (field, value) => {
@@ -2508,22 +2755,41 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
 
   const appendFiles = async (fileList) => {
     const remainingCount = Math.max(0, 10 - photoPreviews.length);
-    const validFiles = Array.from(fileList)
-      .filter((file) => file.type.startsWith("image/"))
+    const files = Array.from(fileList);
+    const invalidTypeCount = files.filter((file) => !file.type.startsWith("image/")).length;
+    const emptyFileCount = files.filter((file) => file.type.startsWith("image/") && file.size <= 0).length;
+    const validFiles = files
+      .filter((file) => file.type.startsWith("image/") && file.size > 0)
       .slice(0, remainingCount);
+
+    if (emptyFileCount > 0) {
+      setImageError("빈 이미지 파일은 업로드할 수 없습니다.");
+    } else if (invalidTypeCount > 0) {
+      setImageError("JPG 또는 PNG 이미지 파일만 업로드할 수 있습니다.");
+    } else if (files.length > remainingCount) {
+      setImageError("이미지는 최대 10장까지 업로드할 수 있습니다.");
+    } else {
+      setImageError("");
+    }
 
     if (validFiles.length === 0) {
       return;
     }
 
-    const nextPreviews = await Promise.all(
+    const previewCandidates = await Promise.all(
       validFiles.map(async (file) => ({
         name: file.name,
+        file,
         src: await readFileAsDataUrl(file),
       })),
     );
 
-    setPhotoPreviews((current) => [...current, ...nextPreviews].slice(0, 10));
+    setPhotoPreviews((current) => [...current, ...previewCandidates].slice(0, 10));
+  };
+
+  const removePhotoPreview = (index) => {
+    setPhotoPreviews((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setImageError("");
   };
 
   const handleFileChange = async (event) => {
@@ -2544,7 +2810,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     const baseAddress = form.address.trim();
@@ -2564,8 +2830,9 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
       ]),
     );
 
-    onSubmitListing({
-      title: form.title.trim() || "새로운 팝업 공간",
+    const industryRestrictions = form.restrictions.filter((item) => item !== "없음");
+    const listingDraft = {
+      title: form.title.trim(),
       category: editingListing?.category ?? "기타",
       address,
       baseAddress,
@@ -2574,17 +2841,20 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
       deposit: Number(form.deposit) || 0,
       area: `${form.area || 0}㎡`,
       views: editingListing?.views ?? 0,
-      image: photoPreviews[0]?.src ?? editingListing?.image ?? "/assets/listing-1.png",
+      image: photoPreviews[0]?.src ?? editingListing?.image ?? "",
       gallery:
         photoPreviews.length > 0
           ? photoPreviews.map((preview) => preview.src)
           : editingListing?.gallery ?? [],
+      imagePreviews: photoPreviews,
       status: editingListing?.status ?? "모집중",
       favorite: editingListing?.favorite ?? false,
       quickAdded: editingListing?.quickAdded ?? false,
       lat: Number(form.lat) || 37.5665,
       lng: Number(form.lng) || 126.978,
       facilities: nextFacilities,
+      industryRestrictions,
+      additionalRestrictions: customRestrictions,
       restrictions: nextRestrictions.length > 0 ? nextRestrictions : ["없음"],
       availableFrom: form.availableFrom.trim(),
       availableTo: form.availableTo.trim(),
@@ -2593,7 +2863,17 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
       description: form.description.trim(),
       hashtags: parseHashtags(form.hashtags),
       ownedByMe: editingListing?.ownedByMe ?? true,
-    });
+    };
+
+    setSubmitError("");
+    setIsSubmitting(true);
+
+    try {
+      await onSubmitListing(listingDraft);
+    } catch (error) {
+      setSubmitError(error.message || "매물 저장에 실패했습니다.");
+      setIsSubmitting(false);
+    }
   };
 
   const handleAddressSearch = async () => {
@@ -2711,9 +2991,20 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                 {photoPreviews.length > 0 ? (
                   <>
                     <div className="upload-preview-grid">
-                      {photoPreviews.map((preview) => (
+                      {photoPreviews.map((preview, index) => (
                         <div key={`${preview.name}-${preview.src}`} className="upload-preview">
                           <img src={preview.src} alt={preview.name} />
+                          <button
+                            className="upload-preview__remove"
+                            type="button"
+                            aria-label={`${preview.name} 삭제`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removePhotoPreview(index);
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -2731,6 +3022,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                   </div>
                 )}
               </div>
+              {imageError ? <p className="signup-form__error upload-dropzone__error">{imageError}</p> : null}
             </div>
 
             <div className="field">
@@ -3082,8 +3374,10 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
               </div>
             </div>
 
-            <button className="submit-button" type="submit">
-              {isEditing ? "매물 수정하기" : "매물 등록하기"}
+            {submitError ? <p className="signup-form__error">{submitError}</p> : null}
+
+            <button className="submit-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "저장 중..." : isEditing ? "매물 수정하기" : "매물 등록하기"}
             </button>
           </section>
         </form>
@@ -3093,24 +3387,130 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
 }
 
 export default function App() {
+  const savedAuthSession = getSavedAuthSession();
   const [currentPage, setCurrentPage] = useState("home");
-  const [listings, setListings] = useState(() => listingSeed.map(enrichListing));
-  const [reservations, setReservations] = useState(() => reservationSeed);
-  const [chatThreads, setChatThreads] = useState(() => chatSeed);
-  const [activeChatId, setActiveChatId] = useState(() => chatSeed[0]?.id ?? null);
-  const [profile, setProfile] = useState(() => myProfileSeed);
-  const [registeredUsernames, setRegisteredUsernames] = useState(() => existingUsernameSeed);
+  const [listings, setListings] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [reservationSummary, setReservationSummary] = useState({
+    pendingCount: 0,
+    approvedCount: 0,
+    totalCount: 0,
+  });
+  const [reservationState, setReservationState] = useState({
+    loading: false,
+    error: "",
+  });
+  const [chatThreads, setChatThreads] = useState([]);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [chatState, setChatState] = useState({
+    loading: false,
+    error: "",
+  });
+  const [profile, setProfile] = useState(() => ({
+    ...myProfileSeed,
+    name: savedAuthSession?.user?.name ?? myProfileSeed.name,
+    phone: formatPhoneNumber(savedAuthSession?.user?.phone ?? myProfileSeed.phone),
+  }));
+  const [authSession, setAuthSession] = useState(() => savedAuthSession);
+  const [pendingAuthPage, setPendingAuthPage] = useState(null);
+  const [registeredUsernames, setRegisteredUsernames] = useState([]);
   const [editingListingId, setEditingListingId] = useState(null);
   const [selectedListingId, setSelectedListingId] = useState(null);
   const [detailReturnPage, setDetailReturnPage] = useState("home");
+  const [detailState, setDetailState] = useState({
+    loading: false,
+    error: "",
+  });
 
   const appKey = import.meta.env.VITE_KAKAO_MAP_APP_KEY ?? "";
   const editingListing = listings.find((listing) => listing.id === editingListingId) ?? null;
   const selectedListing = listings.find((listing) => listing.id === selectedListingId) ?? null;
+  const isAuthenticated = Boolean(authSession?.accessToken);
+  const currentUserId = authSession?.user?.userId ?? authSession?.user?.id ?? null;
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [currentPage]);
+
+  useEffect(() => {
+    const handleAuthUpdated = (event) => {
+      if (event.detail) {
+        setAuthSession(event.detail);
+      }
+    };
+    const handleAuthExpired = () => {
+      setAuthSession(null);
+      setProfile(myProfileSeed);
+      setPendingAuthPage(protectedPages.has(currentPage) ? currentPage : null);
+      setEditingListingId(null);
+      setSelectedListingId(null);
+      setCurrentPage("login");
+      window.alert("로그인이 만료되었습니다. 다시 로그인해주세요.");
+    };
+
+    window.addEventListener("kolpop:auth-updated", handleAuthUpdated);
+    window.addEventListener("kolpop:auth-expired", handleAuthExpired);
+
+    return () => {
+      window.removeEventListener("kolpop:auth-updated", handleAuthUpdated);
+      window.removeEventListener("kolpop:auth-expired", handleAuthExpired);
+    };
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (currentPage !== "detail" || !selectedListingId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDetailState({
+      loading: true,
+      error: "",
+    });
+
+    fetchListingDetail(selectedListingId)
+      .then((detailListing) => {
+        if (cancelled) {
+          return;
+        }
+
+        setListings((current) => {
+          const hasListing = current.some((listing) => listing.id === detailListing.id);
+
+          if (!hasListing) {
+            return [enrichListing(detailListing), ...current];
+          }
+
+          return current.map((listing) =>
+            listing.id === detailListing.id
+              ? enrichListing({
+                  ...listing,
+                  ...detailListing,
+                  ownedByMe: listing.ownedByMe ?? false,
+                })
+              : listing,
+          );
+        });
+        setDetailState({
+          loading: false,
+          error: "",
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setDetailState({
+          loading: false,
+          error: error.message || "매물 상세 정보를 불러오지 못했습니다.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, selectedListingId]);
 
   const updateListing = (listingId, updater) => {
     setListings((current) =>
@@ -3118,54 +3518,306 @@ export default function App() {
     );
   };
 
-  const saveListing = (draft) => {
+  const loadListingsForDiscovery = async ({ bounds, keyword, sort } = {}) => {
+    const data = await fetchListingsForDiscovery({ bounds, keyword, sort });
+
+    setListings((current) => {
+      const listingsById = new Map(current.map((listing) => [listing.id, listing]));
+      const discoveryListingsById = new Map();
+
+      data.map.listings.forEach((listing) => {
+        discoveryListingsById.set(listing.id, listing);
+      });
+
+      data.nearbyListings.listings.forEach((listing) => {
+        discoveryListingsById.set(listing.id, {
+          ...discoveryListingsById.get(listing.id),
+          ...listing,
+        });
+      });
+
+      discoveryListingsById.forEach((listing) => {
+        const previousListing = listingsById.get(listing.id);
+        listingsById.set(
+          listing.id,
+          enrichListing({
+            ...previousListing,
+            ...listing,
+            ownedByMe: previousListing?.ownedByMe ?? false,
+          }),
+        );
+      });
+
+      const ownedListings = current.filter((listing) => listing.ownedByMe);
+      const discoveryListings = Array.from(discoveryListingsById.values()).map((listing) => {
+        const previousListing = listingsById.get(listing.id);
+
+        return enrichListing({
+          ...previousListing,
+          ...listing,
+          ownedByMe: previousListing?.ownedByMe ?? false,
+        });
+      });
+
+      return [...ownedListings, ...discoveryListings.filter((listing) => !listing.ownedByMe)];
+    });
+
+    return data;
+  };
+
+  const reloadMyListings = async () => {
+    const data = await fetchMyListings();
+
+    setListings((current) => {
+      const nonOwnedListings = current.filter((listing) => !listing.ownedByMe);
+      const ownedListings = data.listings.map((listing) => enrichListing(listing));
+      return [...ownedListings, ...nonOwnedListings];
+    });
+
+    return data;
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "mypage") {
+      return;
+    }
+
+    reloadMyListings().catch(() => {});
+  }, [currentPage, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "mypage") {
+      return;
+    }
+
+    fetchMyPage()
+      .then((nextProfile) => {
+        setProfile((current) => ({
+          ...current,
+          ...nextProfile,
+          phone: formatPhoneNumber(nextProfile.phone ?? current.phone),
+        }));
+      })
+      .catch(() => {});
+  }, [currentPage, isAuthenticated]);
+
+  const saveListing = async (draft) => {
+    const imageUrls = await resolveListingImageUrls(draft.imagePreviews);
+    const payload = createListingPayload({
+      ...draft,
+      image: imageUrls[0] || "",
+      gallery: imageUrls,
+    });
+
     if (editingListingId) {
-      setListings((current) =>
-        current.map((listing) =>
-          listing.id === editingListingId
-            ? enrichListing({
-                ...listing,
-                ...draft,
-                id: listing.id,
-                ownedByMe: true,
-              })
-            : listing,
-        ),
-      );
+      await updateListingRequest(editingListingId, payload);
+      await reloadMyListings();
       setEditingListingId(null);
       setCurrentPage("mypage");
       return;
     }
 
-    setListings((current) => {
-      const nextId = current.reduce((maxId, listing) => Math.max(maxId, listing.id), 0) + 1;
-      return [enrichListing({ id: nextId, ownedByMe: true, ...draft }), ...current];
-    });
-    setCurrentPage("home");
+    const result = await createListing(payload);
+    await reloadMyListings();
+
+    if (result?.listingId) {
+      setSelectedListingId(Number(result.listingId));
+      setDetailReturnPage("mypage");
+      setCurrentPage("detail");
+      return;
+    }
+
+    setCurrentPage("mypage");
   };
 
-  const updateReservation = (reservationId, updater) => {
+  const loadManagementReservations = async () => {
+    setReservationState({
+      loading: true,
+      error: "",
+    });
+
+    try {
+      const data = await fetchManagementReservations();
+      setReservations(data.reservations);
+      setReservationSummary(data.summary);
+      setReservationState({
+        loading: false,
+        error: "",
+      });
+      return data;
+    } catch (error) {
+      setReservationState({
+        loading: false,
+        error: error.message || "예약 정보를 불러오지 못했습니다.",
+      });
+      return null;
+    }
+  };
+
+  const applyReservationActionResult = (result) => {
     setReservations((current) =>
-      current.map((reservation) => (reservation.id === reservationId ? updater(reservation) : reservation)),
+      current.map((reservation) =>
+        reservation.id === result.reservationId
+          ? {
+              ...reservation,
+              status: result.status,
+              statusLabel: result.statusLabel,
+              chatRoomId: result.chatRoomId ?? reservation.chatRoomId,
+              canApprove: false,
+              canReject: false,
+              canChat: result.status === "approved" && Boolean(result.chatRoomId ?? reservation.chatRoomId),
+            }
+          : reservation,
+      ),
     );
   };
 
-  const openChatRoom = (reservation) => {
-    const matchedThread =
-      chatThreads.find(
-        (thread) =>
-          thread.name === reservation.applicant &&
-          thread.listingTitle === reservation.listingTitle,
-      ) ??
-      chatThreads.find((thread) => thread.listingTitle === reservation.listingTitle) ??
-      chatThreads[0] ??
-      null;
+  const approveReservation = async (reservationId) => {
+    try {
+      const result = await approveReservationRequest(reservationId);
+      applyReservationActionResult(result);
+      await loadManagementReservations();
+    } catch (error) {
+      window.alert(error.message || "예약 승인에 실패했습니다.");
+    }
+  };
 
-    if (matchedThread) {
-      setActiveChatId(matchedThread.id);
+  const rejectReservation = async (reservationId) => {
+    try {
+      const result = await rejectReservationRequest(reservationId);
+      applyReservationActionResult(result);
+      await loadManagementReservations();
+    } catch (error) {
+      window.alert(error.message || "예약 거절에 실패했습니다.");
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "reservation") {
+      return;
+    }
+
+    loadManagementReservations();
+  }, [currentPage, isAuthenticated]);
+
+  const loadChatRooms = async () => {
+    setChatState({
+      loading: true,
+      error: "",
+    });
+
+    try {
+      const rooms = await fetchChatRooms(currentUserId);
+      setChatThreads((current) =>
+        rooms.map((room) => {
+          const previousRoom = current.find((thread) => thread.id === room.id);
+          return previousRoom ? { ...room, messages: previousRoom.messages } : room;
+        }),
+      );
+      setActiveChatId((current) => current ?? rooms[0]?.id ?? null);
+      setChatState({
+        loading: false,
+        error: "",
+      });
+      return rooms;
+    } catch (error) {
+      setChatState({
+        loading: false,
+        error: error.message || "대화방을 불러오지 못했습니다.",
+      });
+      return [];
+    }
+  };
+
+  const loadChatMessages = async (roomId) => {
+    if (!roomId) {
+      return;
+    }
+
+    try {
+      const messages = await fetchChatMessages(roomId, currentUserId);
+      setChatThreads((current) =>
+        current.map((thread) =>
+          thread.id === roomId
+            ? {
+                ...thread,
+                messages,
+                preview: messages.at(-1)?.text || thread.preview,
+                timestamp: messages.at(-1)?.timestamp || thread.timestamp,
+              }
+            : thread,
+        ),
+      );
+      setChatState((current) => ({
+        ...current,
+        error: "",
+      }));
+    } catch (error) {
+      setChatState((current) => ({
+        ...current,
+        error: error.message || "메시지를 불러오지 못했습니다.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "chat") {
+      return;
+    }
+
+    loadChatRooms();
+  }, [currentPage, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "chat" || !activeChatId) {
+      return;
+    }
+
+    loadChatMessages(activeChatId);
+  }, [activeChatId, currentPage, isAuthenticated]);
+
+  const selectChatThread = (roomId) => {
+    setActiveChatId(roomId);
+    loadChatMessages(roomId);
+  };
+
+  const requestLoginForPage = (page) => {
+    const shouldLogin = window.confirm("로그인이 필요한 서비스입니다. 로그인하시겠습니까?");
+
+    if (shouldLogin) {
+      setPendingAuthPage(page);
+      setEditingListingId(null);
+      setSelectedListingId(null);
+      setCurrentPage("login");
+    }
+
+    return shouldLogin;
+  };
+
+  const ensureAuthenticated = (page) => {
+    if (isAuthenticated || !protectedPages.has(page)) {
+      return true;
+    }
+
+    requestLoginForPage(page);
+    return false;
+  };
+
+  const openChatRoom = async (reservation) => {
+    if (!ensureAuthenticated("chat")) {
+      return;
+    }
+
+    if (reservation?.chatRoomId) {
+      setActiveChatId(Number(reservation.chatRoomId));
+      setCurrentPage("chat");
+      await loadChatRooms();
+      await loadChatMessages(Number(reservation.chatRoomId));
+      return;
     }
 
     setCurrentPage("chat");
+    await loadChatRooms();
   };
 
   const sendChatMessage = (threadId, payload) => {
@@ -3262,55 +3914,116 @@ export default function App() {
     }
   };
 
-  const deleteListing = (listingId) => {
-    setListings((current) => current.filter((listing) => listing.id !== listingId));
+  const deleteListing = async (listingId) => {
+    if (!window.confirm("매물을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    try {
+      await deleteListingRequest(listingId);
+      setListings((current) => current.filter((listing) => listing.id !== listingId));
+    } catch (error) {
+      window.alert(error.message || "매물 삭제에 실패했습니다.");
+    }
   };
 
-  const closeRecruitment = (listingId) => {
-    setListings((current) =>
-      current.map((listing) =>
-        listing.id === listingId
-          ? {
-              ...listing,
-              status: "모집 종료",
-            }
-          : listing,
-      ),
-    );
+  const closeRecruitment = async (listingId) => {
+    try {
+      const result = await closeListingRequest(listingId);
+      const nextStatus = result?.status?.label || "모집 종료";
+
+      setListings((current) =>
+        current.map((listing) =>
+          listing.id === listingId
+            ? {
+                ...listing,
+                status: nextStatus,
+              }
+            : listing,
+        ),
+      );
+    } catch (error) {
+      window.alert(error.message || "모집 종료에 실패했습니다.");
+    }
   };
 
   const handlePrimaryNavigation = (page) => {
+    if (!ensureAuthenticated(page)) {
+      return;
+    }
+
+    if (!protectedPages.has(page)) {
+      setPendingAuthPage(null);
+    }
+
     setEditingListingId(null);
     setSelectedListingId(null);
     setCurrentPage(page);
   };
 
   const openCreateListingPage = () => {
+    if (!ensureAuthenticated("register")) {
+      return;
+    }
+
     setEditingListingId(null);
     setSelectedListingId(null);
     setCurrentPage("register");
   };
 
   const openListingEditPage = (listingId) => {
+    if (!ensureAuthenticated("register")) {
+      return;
+    }
+
     setEditingListingId(listingId);
     setSelectedListingId(null);
     setCurrentPage("register");
   };
 
   const openListingDetailPage = (listingId, returnPage = "home") => {
+    setDetailState({
+      loading: false,
+      error: "",
+    });
     setSelectedListingId(listingId);
     setDetailReturnPage(returnPage);
     setCurrentPage("detail");
   };
 
-  const handleLogin = () => {
-    setEditingListingId(null);
-    setSelectedListingId(null);
-    setCurrentPage("mypage");
+  const applyAuthSession = (session) => {
+    saveAuthSession(session);
+    setAuthSession(session);
+    setProfile((current) => ({
+      ...current,
+      name: session.user?.name ?? current.name,
+      phone: formatPhoneNumber(session.user?.phone ?? current.phone),
+    }));
   };
 
-  const handleSignup = (form) => {
+  const handleLogin = async (form) => {
+    const session = await loginLandlord({
+      loginId: form.loginId.trim(),
+      password: form.password,
+    });
+
+    applyAuthSession(session);
+    setEditingListingId(null);
+    setSelectedListingId(null);
+    setCurrentPage(pendingAuthPage ?? "mypage");
+    setPendingAuthPage(null);
+  };
+
+  const handleSignup = async (form) => {
     const normalizedUsername = normalizeUsername(form.username);
+    const session = await signupLandlord({
+      loginId: normalizedUsername,
+      name: form.name.trim(),
+      password: form.password,
+      passwordConfirm: form.passwordConfirm,
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+    });
 
     setProfile((current) => ({
       ...current,
@@ -3318,38 +4031,77 @@ export default function App() {
       phone: formatPhoneNumber(form.phone) || current.phone,
       email: form.email.trim(),
     }));
+    applyAuthSession(session);
     setRegisteredUsernames((current) =>
       current.includes(normalizedUsername) ? current : [...current, normalizedUsername],
     );
     setSelectedListingId(null);
-    setCurrentPage("login");
+    setCurrentPage(pendingAuthPage ?? "mypage");
+    setPendingAuthPage(null);
   };
 
-  const openChatByListing = (listing) => {
-    const matchedThread =
-      chatThreads.find((thread) => thread.listingTitle === listing.title) ??
-      chatThreads[0] ??
-      null;
+  const handleLogout = () => {
+    clearAuthSession();
+    setAuthSession(null);
+    setProfile(myProfileSeed);
+    setPendingAuthPage(null);
+    setEditingListingId(null);
+    setSelectedListingId(null);
+    setCurrentPage("home");
+  };
 
-    if (matchedThread) {
-      setActiveChatId(matchedThread.id);
+  const openChatByListing = async (listing) => {
+    if (!ensureAuthenticated("chat")) {
+      return;
     }
 
-    setCurrentPage("chat");
+    if (!listing.landlordId) {
+      window.alert("채팅방을 만들 임대인 정보를 찾지 못했습니다.");
+      return;
+    }
+
+    try {
+      const room = await createChatRoom(listing.landlordId, currentUserId);
+      setChatThreads((current) => {
+        const exists = current.some((thread) => thread.id === room.id);
+        return exists
+          ? current.map((thread) => (thread.id === room.id ? { ...thread, ...room, messages: thread.messages } : thread))
+          : [room, ...current];
+      });
+      setActiveChatId(room.id);
+      setCurrentPage("chat");
+      loadChatMessages(room.id);
+    } catch (error) {
+      window.alert(error.message || "채팅방을 만들지 못했습니다.");
+    }
   };
 
-  const handleUpdateProfile = (nextProfile) => {
+  const handleUpdateProfile = async (nextProfile) => {
+    const updatedProfile = await updateMyPage({
+      name: nextProfile.name?.trim() ?? "",
+      email: nextProfile.email?.trim() ?? "",
+      phone: formatPhoneNumber(nextProfile.phone ?? ""),
+      bio: nextProfile.bio?.trim() ?? "",
+    });
+
     setProfile((current) => ({
       ...current,
-      ...nextProfile,
-      phone: formatPhoneNumber(nextProfile.phone ?? current.phone),
+      ...updatedProfile,
+      phone: formatPhoneNumber(updatedProfile.phone ?? current.phone),
     }));
   };
 
   let pageContent = null;
 
   if (currentPage === "home") {
-    pageContent = <HomePage listings={listings} appKey={appKey} onOpenDetail={openListingDetailPage} />;
+    pageContent = (
+      <HomePage
+        listings={listings}
+        appKey={appKey}
+        onOpenDetail={openListingDetailPage}
+        onFetchListingsForDiscovery={loadListingsForDiscovery}
+      />
+    );
   } else if (currentPage === "login") {
     pageContent = <LoginPage onSubmit={handleLogin} onNavigateSignup={() => setCurrentPage("signup")} />;
   } else if (currentPage === "signup") {
@@ -3357,14 +4109,26 @@ export default function App() {
       <SignupPage
         onNavigateLogin={() => setCurrentPage("login")}
         onSubmit={handleSignup}
-        takenUsernames={registeredUsernames}
+        onCheckLoginId={(loginId) => {
+          if (registeredUsernames.includes(loginId)) {
+            return Promise.reject(new Error("이미 사용 중인 아이디입니다."));
+          }
+
+          return checkLoginId(loginId);
+        }}
+        onSendPhoneCode={sendSignupCode}
+        onVerifyPhoneCode={verifySignupCode}
       />
     );
   } else if (currentPage === "reservation") {
     pageContent = (
       <ReservationPage
         reservations={reservations}
-        onUpdateReservation={updateReservation}
+        summary={reservationSummary}
+        isLoading={reservationState.loading}
+        errorMessage={reservationState.error}
+        onApproveReservation={approveReservation}
+        onRejectReservation={rejectReservation}
         onOpenChat={openChatRoom}
       />
     );
@@ -3373,7 +4137,9 @@ export default function App() {
       <ChatPage
         threads={chatThreads}
         activeThreadId={activeChatId}
-        onSelectThread={setActiveChatId}
+        isLoading={chatState.loading}
+        errorMessage={chatState.error}
+        onSelectThread={selectChatThread}
         onSendMessage={sendChatMessage}
         onCompleteDeal={completeDeal}
       />
@@ -3384,13 +4150,21 @@ export default function App() {
         listing={selectedListing}
         profile={profile}
         reservationCount={
+          selectedListing.reservationCount ||
           reservations.filter((reservation) => reservation.listingTitle === selectedListing.title).length ||
           myListingReservationCounts[selectedListing.id] ||
           0
         }
+        isLoading={detailState.loading}
+        errorMessage={detailState.error}
         appKey={appKey}
+        onOpenChat={openChatByListing}
         onBack={() => {
           setSelectedListingId(null);
+          setDetailState({
+            loading: false,
+            error: "",
+          });
           setCurrentPage(detailReturnPage);
         }}
       />
@@ -3422,7 +4196,12 @@ export default function App() {
 
   return (
     <>
-      <SiteHeader currentPage={currentPage} onNavigate={handlePrimaryNavigation} />
+      <SiteHeader
+        currentPage={currentPage}
+        isAuthenticated={isAuthenticated}
+        onNavigate={handlePrimaryNavigation}
+        onLogout={handleLogout}
+      />
 
       <main>{pageContent}</main>
     </>

@@ -60,17 +60,25 @@ const getAddressSearchLevel = (keyword) => {
 
 const createLatLng = (kakaoMaps, { lat, lng }) => new kakaoMaps.maps.LatLng(lat, lng);
 
-const createOverlayElement = (listing, onSelect) => {
+const createOverlayElement = (listing, onSelect, onOpen) => {
   const element = document.createElement("button");
   element.type = "button";
   element.className = "map-price-pin";
+  element.setAttribute("aria-label", `${listing.title} 지도 핀`);
+  updateOverlayElement(element, listing);
+  element.addEventListener("click", () => {
+    onSelect(listing.id);
+    onOpen?.(listing.id);
+  });
+  return element;
+};
+
+const updateOverlayElement = (element, listing) => {
   element.setAttribute("aria-label", `${listing.title} 지도 핀`);
   element.innerHTML = `
     <span class="map-price-pin__amount">${Math.round(listing.deposit / 10000).toLocaleString("ko-KR")}만 / ${Math.round(listing.price / 10000).toLocaleString("ko-KR")}만</span>
     <span class="map-price-pin__caption">보증 / 일</span>
   `;
-  element.addEventListener("click", () => onSelect(listing.id));
-  return element;
 };
 
 export function useKakaoMap({
@@ -79,7 +87,9 @@ export function useKakaoMap({
   activeListingId,
   panelFilter,
   onVisibleIdsChange,
+  onBoundsChange,
   onSelectListing,
+  onOpenListing,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -90,7 +100,9 @@ export function useKakaoMap({
     activeListingId,
     panelFilter,
     onVisibleIdsChange,
+    onBoundsChange,
     onSelectListing,
+    onOpenListing,
   });
 
   const [mapReady, setMapReady] = useState(false);
@@ -103,7 +115,26 @@ export function useKakaoMap({
     activeListingId,
     panelFilter,
     onVisibleIdsChange,
+    onBoundsChange,
     onSelectListing,
+    onOpenListing,
+  };
+
+  const getBoundsPayload = () => {
+    if (!mapRef.current || !window.kakao?.maps) {
+      return null;
+    }
+
+    const bounds = mapRef.current.getBounds();
+    const southWest = bounds.getSouthWest();
+    const northEast = bounds.getNorthEast();
+
+    return {
+      minLatitude: southWest.getLat(),
+      maxLatitude: northEast.getLat(),
+      minLongitude: southWest.getLng(),
+      maxLongitude: northEast.getLng(),
+    };
   };
 
   const syncVisibleIds = () => {
@@ -124,17 +155,58 @@ export function useKakaoMap({
     latestRef.current.onVisibleIdsChange(nextIds);
   };
 
+  const syncBounds = () => {
+    const bounds = getBoundsPayload();
+
+    if (bounds) {
+      latestRef.current.onBoundsChange?.(bounds);
+    }
+  };
+
   const syncOverlays = () => {
+    if (!mapRef.current || !window.kakao?.maps) {
+      return;
+    }
+
     overlaysRef.current.forEach(({ overlay, element }, listingId) => {
       const listing = latestRef.current.listings.find((item) => item.id === listingId);
 
       if (!listing) {
         overlay.setMap(null);
+        overlaysRef.current.delete(listingId);
         return;
       }
 
       overlay.setVisible(latestRef.current.panelFilter(listing));
+      overlay.setPosition(createLatLng(window.kakao, listing));
+      updateOverlayElement(element, listing);
       element.classList.toggle("is-active", latestRef.current.activeListingId === listingId);
+    });
+
+    latestRef.current.listings.forEach((listing) => {
+      if (overlaysRef.current.has(listing.id)) {
+        return;
+      }
+
+      if (!Number.isFinite(Number(listing.lat)) || !Number.isFinite(Number(listing.lng))) {
+        return;
+      }
+
+      const element = createOverlayElement(
+        listing,
+        latestRef.current.onSelectListing,
+        latestRef.current.onOpenListing,
+      );
+      const overlay = new window.kakao.maps.CustomOverlay({
+        position: createLatLng(window.kakao, listing),
+        content: element,
+        yAnchor: 1,
+      });
+
+      overlay.setMap(mapRef.current);
+      overlay.setVisible(latestRef.current.panelFilter(listing));
+      element.classList.toggle("is-active", latestRef.current.activeListingId === listing.id);
+      overlaysRef.current.set(listing.id, { overlay, element });
     });
   };
 
@@ -279,7 +351,11 @@ export function useKakaoMap({
           map.addControl(zoomControl, kakao.maps.ControlPosition.RIGHT);
 
           latestRef.current.listings.forEach((listing) => {
-            const element = createOverlayElement(listing, latestRef.current.onSelectListing);
+            const element = createOverlayElement(
+              listing,
+              latestRef.current.onSelectListing,
+              latestRef.current.onOpenListing,
+            );
             const overlay = new kakao.maps.CustomOverlay({
               position: createLatLng(kakao, listing),
               content: element,
@@ -294,6 +370,7 @@ export function useKakaoMap({
 
           idleHandlerRef.current = () => {
             syncVisibleIds();
+            syncBounds();
           };
 
           kakao.maps.event.addListener(map, "idle", idleHandlerRef.current);
@@ -302,6 +379,7 @@ export function useKakaoMap({
           setMapMessage("");
           syncOverlays();
           fitMapToListings(latestRef.current.listings.filter(latestRef.current.panelFilter));
+          requestAnimationFrame(syncBounds);
         } catch {
           setMapReady(false);
           setMapMessage(INIT_ERROR_MESSAGE);
