@@ -33,6 +33,11 @@ import {
   fetchManagementReservations,
   rejectReservationRequest,
 } from "./lib/reservations.js";
+import {
+  createChatSocket,
+  normalizeSocketMessage,
+  sendChatSocketMessage,
+} from "./lib/chatSocket.js";
 
 const facilityOptions = [
   "와이파이",
@@ -1067,7 +1072,6 @@ function ListingDetailPage({
   errorMessage,
   appKey,
   onBack,
-  onOpenChat,
 }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const gallery = listing.gallery?.length > 0 ? listing.gallery : listing.image ? [listing.image] : [];
@@ -1157,7 +1161,7 @@ function ListingDetailPage({
                 </span>
                 <div>
                   <strong>{listing.landlordName || profile.name || "임대인"}</strong>
-                  <p>연락은 채팅을 이용해 주세요</p>
+                  <p>임대인 정보</p>
                 </div>
               </div>
               <dl className="detail-owner__stats">
@@ -1170,17 +1174,6 @@ function ListingDetailPage({
                   <dd>{formatNumber(reservationCount)}</dd>
                 </div>
               </dl>
-              <div className="detail-side-card__actions">
-                <button
-                  className="detail-side-card__primary"
-                  type="button"
-                  disabled={!listing.landlordId}
-                  onClick={() => onOpenChat?.(listing)}
-                >
-                  <NavIcon type="chat" />
-                  <span>채팅하기</span>
-                </button>
-              </div>
             </section>
           </aside>
         </div>
@@ -3421,6 +3414,7 @@ export default function App() {
     loading: false,
     error: "",
   });
+  const chatSocketRef = useRef(null);
 
   const appKey = import.meta.env.VITE_KAKAO_MAP_APP_KEY ?? "";
   const editingListing = listings.find((listing) => listing.id === editingListingId) ?? null;
@@ -3776,6 +3770,73 @@ export default function App() {
     loadChatMessages(activeChatId);
   }, [activeChatId, currentPage, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated || currentPage !== "chat" || !activeChatId) {
+      chatSocketRef.current?.close();
+      chatSocketRef.current = null;
+      return undefined;
+    }
+
+    chatSocketRef.current?.close();
+
+    try {
+      chatSocketRef.current = createChatSocket({
+        roomId: activeChatId,
+        onMessage: (payload) => {
+          const nextMessage = normalizeSocketMessage(payload, currentUserId);
+
+          if (nextMessage.roomId && nextMessage.roomId !== Number(activeChatId)) {
+            return;
+          }
+
+          setChatThreads((current) =>
+            current.map((thread) => {
+              if (thread.id !== Number(activeChatId)) {
+                return thread;
+              }
+
+              if (
+                thread.messages.some((message) => message.id === nextMessage.id) ||
+                thread.messages.some(
+                  (message) =>
+                    message.sender === nextMessage.sender &&
+                    message.text === nextMessage.text &&
+                    message.timestamp === "방금",
+                )
+              ) {
+                return thread;
+              }
+
+              return {
+                ...thread,
+                preview: nextMessage.text || thread.preview,
+                timestamp: nextMessage.timestamp || "방금",
+                unreadCount: 0,
+                messages: [...thread.messages, nextMessage],
+              };
+            }),
+          );
+        },
+        onError: (error) => {
+          setChatState((current) => ({
+            ...current,
+            error: error.message,
+          }));
+        },
+      });
+    } catch (error) {
+      setChatState((current) => ({
+        ...current,
+        error: error.message || "채팅 소켓을 연결하지 못했습니다.",
+      }));
+    }
+
+    return () => {
+      chatSocketRef.current?.close();
+      chatSocketRef.current = null;
+    };
+  }, [activeChatId, currentPage, currentUserId, isAuthenticated]);
+
   const selectChatThread = (roomId) => {
     setActiveChatId(roomId);
     loadChatMessages(roomId);
@@ -3820,7 +3881,7 @@ export default function App() {
     await loadChatRooms();
   };
 
-  const sendChatMessage = (threadId, payload) => {
+  const appendLocalChatMessage = (threadId, payload) => {
     setChatThreads((current) =>
       current.map((thread) => {
         if (thread.id !== threadId) {
@@ -3855,6 +3916,27 @@ export default function App() {
         };
       }),
     );
+  };
+
+  const sendChatMessage = (threadId, payload) => {
+    const messageDraft = typeof payload === "string" ? { text: payload } : payload;
+
+    if (messageDraft.text && !messageDraft.imageSrc) {
+      try {
+        sendChatSocketMessage(chatSocketRef.current, {
+          roomId: threadId,
+          content: messageDraft.text,
+        });
+      } catch (error) {
+        setChatState((current) => ({
+          ...current,
+          error: error.message || "메시지를 보내지 못했습니다.",
+        }));
+        return;
+      }
+    }
+
+    appendLocalChatMessage(threadId, payload);
   };
 
   const completeDeal = (threadId) => {
@@ -4050,32 +4132,6 @@ export default function App() {
     setCurrentPage("home");
   };
 
-  const openChatByListing = async (listing) => {
-    if (!ensureAuthenticated("chat")) {
-      return;
-    }
-
-    if (!listing.landlordId) {
-      window.alert("채팅방을 만들 임대인 정보를 찾지 못했습니다.");
-      return;
-    }
-
-    try {
-      const room = await createChatRoom(listing.landlordId, currentUserId);
-      setChatThreads((current) => {
-        const exists = current.some((thread) => thread.id === room.id);
-        return exists
-          ? current.map((thread) => (thread.id === room.id ? { ...thread, ...room, messages: thread.messages } : thread))
-          : [room, ...current];
-      });
-      setActiveChatId(room.id);
-      setCurrentPage("chat");
-      loadChatMessages(room.id);
-    } catch (error) {
-      window.alert(error.message || "채팅방을 만들지 못했습니다.");
-    }
-  };
-
   const handleUpdateProfile = async (nextProfile) => {
     const updatedProfile = await updateMyPage({
       name: nextProfile.name?.trim() ?? "",
@@ -4158,7 +4214,6 @@ export default function App() {
         isLoading={detailState.loading}
         errorMessage={detailState.error}
         appKey={appKey}
-        onOpenChat={openChatByListing}
         onBack={() => {
           setSelectedListingId(null);
           setDetailState({

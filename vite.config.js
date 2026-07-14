@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       "import.meta.env.VITE_API_BASE_URL": JSON.stringify(env.VITE_API_BASE_URL || env.BASE_URL || ""),
+      "import.meta.env.VITE_SOCKET_URL": JSON.stringify(env.VITE_SOCKET_URL || env.Socket_URL || env.SOCKET_URL || ""),
     },
     server: {
       host: "127.0.0.1",
