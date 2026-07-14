@@ -2305,6 +2305,7 @@ function ChatPage({
   const messageEndRef = useRef(null);
   const socketRef = useRef(null);
   const reconnectTimerRef = useRef(null);
+  const pendingSocketMessagesRef = useRef([]);
 
   useEffect(() => {
     setDraftMessage("");
@@ -2314,11 +2315,30 @@ function ChatPage({
     messageEndRef.current?.scrollIntoView({ block: "end" });
   }, [activeThreadId, activeThread?.messages.length]);
 
+  const flushPendingSocketMessages = useCallback(() => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    while (pendingSocketMessagesRef.current.length > 0) {
+      const nextMessage = pendingSocketMessagesRef.current[0];
+
+      try {
+        sendChatSocketMessage(socketRef.current, nextMessage);
+        pendingSocketMessagesRef.current.shift();
+      } catch (error) {
+        onSocketError(error.message || "메시지를 보내지 못했습니다.");
+        return;
+      }
+    }
+  }, [onSocketError]);
+
   useEffect(() => {
     if (!activeThread?.id) {
       window.clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close();
       socketRef.current = null;
+      pendingSocketMessagesRef.current = [];
       return undefined;
     }
 
@@ -2335,6 +2355,7 @@ function ChatPage({
           roomId,
           onOpen: () => {
             onSocketError("");
+            flushPendingSocketMessages();
           },
           onMessage: (payload) => {
             const nextMessage = normalizeSocketMessage(payload, currentUserId, roomId);
@@ -2373,7 +2394,7 @@ function ChatPage({
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [activeThread?.id, currentUserId, onReceiveMessage, onSocketError]);
+  }, [activeThread?.id, currentUserId, flushPendingSocketMessages, onReceiveMessage, onSocketError]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -2384,14 +2405,26 @@ function ChatPage({
       return;
     }
 
-    try {
-      sendChatSocketMessage(socketRef.current, {
-        roomId: activeThread.id,
-        content: trimmedMessage,
-      });
-    } catch (error) {
-      onSocketError(error.message || "메시지를 보내지 못했습니다.");
+    if (!currentUserId) {
+      onSocketError("로그인 정보를 확인하지 못해 메시지를 보낼 수 없습니다.");
       return;
+    }
+
+    const nextMessage = {
+      roomId: activeThread.id,
+      content: trimmedMessage,
+    };
+
+    if (socketRef.current?.readyState === WebSocket.OPEN && socketRef.current.__stompConnected) {
+      try {
+        sendChatSocketMessage(socketRef.current, nextMessage);
+      } catch (error) {
+        onSocketError(error.message || "메시지를 보내지 못했습니다.");
+        return;
+      }
+    } else {
+      pendingSocketMessagesRef.current.push(nextMessage);
+      onSocketError("채팅 서버에 연결 중입니다. 연결되면 메시지를 전송합니다.");
     }
 
     onSendMessage(activeThread.id, trimmedMessage);
@@ -3805,16 +3838,18 @@ export default function App() {
     try {
       const messages = await fetchChatMessages(roomId, currentUserId);
       setChatThreads((current) =>
-        current.map((thread) =>
-          thread.id === roomId
-            ? {
-                ...thread,
-                messages,
-                preview: messages.at(-1)?.text || thread.preview,
-                timestamp: messages.at(-1)?.timestamp || thread.timestamp,
-              }
-            : thread,
-        ),
+        current.map((thread) => {
+          if (thread.id !== roomId) {
+            return thread;
+          }
+
+          return {
+            ...thread,
+            messages,
+            preview: messages.at(-1)?.text || thread.preview,
+            timestamp: messages.at(-1)?.timestamp || thread.timestamp,
+          };
+        }),
       );
       setChatState((current) => ({
         ...current,
@@ -3939,6 +3974,7 @@ export default function App() {
               id: nextMessageId,
               sender: "host",
               text: messageDraft.text ?? "",
+              timestamp: "방금",
               imageSrc: messageDraft.imageSrc,
               fileName: messageDraft.fileName,
             },
