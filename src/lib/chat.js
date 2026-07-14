@@ -1,7 +1,7 @@
 import { normalizeApiErrorMessage } from "./apiError.js";
 import { fetchWithAuth } from "./auth.js";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 
 class ChatApiError extends Error {
   constructor(message, code) {
@@ -75,19 +75,44 @@ const getRoomName = (room, currentUserId) => {
   return room.founder?.name || room.landlord?.name || "대화 상대";
 };
 
+const getListingTitle = (listing) => listing?.title || "채팅방";
+
 const normalizeRoom = (room, currentUserId) => ({
   id: Number(room.roomId),
   roomId: Number(room.roomId),
   name: getRoomName(room, currentUserId),
-  listingTitle: "채팅방",
+  listing: room.listing ?? null,
+  listingTitle: getListingTitle(room.listing),
+  thumbnailUrl: room.listing?.thumbnailUrl || "",
   preview: "메시지를 불러와 주세요.",
   timestamp: formatChatTime(room.createdAt),
   unreadCount: 0,
-  dealClosed: false,
+  dealClosed: `${room.status ?? ""}`.toUpperCase() === "CLOSED",
+  status: room.status ?? "",
+  acceptedAt: room.acceptedAt ?? null,
   founder: room.founder ?? null,
   landlord: room.landlord ?? null,
   messages: [],
 });
+
+const normalizeRoomRequest = (request, currentUserId) => {
+  const firstMessage = request.message ?? null;
+
+  return {
+    ...normalizeRoom(request, currentUserId),
+    requestMessage: firstMessage
+      ? {
+          id: Number(firstMessage.messageId),
+          roomId: Number(firstMessage.roomId ?? request.roomId),
+          sender: firstMessage.sender ?? null,
+          content: firstMessage.content || "",
+          timestamp: formatChatTime(firstMessage.createdAt),
+          createdAt: firstMessage.createdAt ?? null,
+        }
+      : null,
+    preview: firstMessage?.content || "새 채팅 요청이 도착했습니다.",
+  };
+};
 
 const normalizeMessage = (message, currentUserId) => {
   const senderId = `${message.sender?.id ?? ""}`;
@@ -114,10 +139,31 @@ export const fetchChatRooms = async (currentUserId) => {
     : [];
 };
 
-export const createChatRoom = async (landlordId, currentUserId) => {
+export const createChatRoom = async ({ listingId, content }, currentUserId) => {
   const data = await requestChat("/chat/rooms", {
     method: "POST",
-    body: { landlordId: Number(landlordId) },
+    body: {
+      listingId: Number(listingId),
+      content: `${content ?? ""}`,
+    },
+  });
+
+  return normalizeRoom(data ?? {}, currentUserId);
+};
+
+export const fetchChatRoomRequests = async (currentUserId) => {
+  const data = await requestChat("/chat/room-requests");
+
+  return Array.isArray(data)
+    ? data
+        .map((request) => normalizeRoomRequest(request, currentUserId))
+        .filter((request) => Number.isFinite(request.id))
+    : [];
+};
+
+export const acceptChatRoom = async (roomId, currentUserId) => {
+  const data = await requestChat(`/chat/rooms/${roomId}/accept`, {
+    method: "PATCH",
   });
 
   return normalizeRoom(data ?? {}, currentUserId);

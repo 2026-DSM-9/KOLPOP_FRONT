@@ -1,7 +1,7 @@
 import { normalizeApiErrorMessage } from "./apiError.js";
 import { fetchWithAuth } from "./auth.js";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 
 class MyPageApiError extends Error {
   constructor(message, code) {

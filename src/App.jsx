@@ -26,7 +26,7 @@ import {
   updateListingRequest,
 } from "./lib/listings.js";
 import { uploadFile } from "./lib/files.js";
-import { createChatRoom, fetchChatMessages, fetchChatRooms } from "./lib/chat.js";
+import { acceptChatRoom, fetchChatMessages, fetchChatRoomRequests, fetchChatRooms } from "./lib/chat.js";
 import { fetchMyPage, updateMyPage } from "./lib/mypage.js";
 import {
   approveReservationRequest,
@@ -2289,11 +2289,13 @@ function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
 
 function ChatPage({
   threads,
+  roomRequests,
   activeThreadId,
   currentUserId,
   isLoading,
   errorMessage,
   onSelectThread,
+  onAcceptRoomRequest,
   onSendMessage,
   onReceiveMessage,
   onSocketError,
@@ -2457,6 +2459,31 @@ function ChatPage({
           </div>
 
           {errorMessage ? <p className="signup-form__error">{errorMessage}</p> : null}
+
+          {roomRequests.length > 0 ? (
+            <div className="chat-request-list" aria-label="채팅 요청 목록">
+              <strong className="chat-request-list__title">대기 중인 요청</strong>
+              {roomRequests.map((request) => (
+                <article className="chat-request-card" key={request.id}>
+                  <div className="chat-thread-card__body">
+                    <div className="chat-thread-card__top">
+                      <strong>{request.name}</strong>
+                      <span>{request.timestamp}</span>
+                    </div>
+                    <p className="chat-thread-card__listing">{request.listingTitle}</p>
+                    <p className="chat-thread-card__preview">{request.preview}</p>
+                  </div>
+                  <button
+                    className="chat-request-card__accept"
+                    type="button"
+                    onClick={() => onAcceptRoomRequest(request.id)}
+                  >
+                    수락
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : null}
 
           <div className="chat-thread-list" role="list" aria-label="대화방 목록">
             {threads.map((thread) => {
@@ -3468,6 +3495,7 @@ export default function App() {
     error: "",
   });
   const [chatThreads, setChatThreads] = useState([]);
+  const [chatRoomRequests, setChatRoomRequests] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [chatState, setChatState] = useState({
     loading: false,
@@ -3808,14 +3836,18 @@ export default function App() {
     });
 
     try {
-      const rooms = await fetchChatRooms(currentUserId);
+      const [rooms, roomRequests] = await Promise.all([
+        fetchChatRooms(currentUserId),
+        fetchChatRoomRequests(currentUserId),
+      ]);
       setChatThreads((current) =>
         rooms.map((room) => {
           const previousRoom = current.find((thread) => thread.id === room.id);
           return previousRoom ? { ...room, messages: previousRoom.messages } : room;
         }),
       );
-      setActiveChatId((current) => current ?? rooms[0]?.id ?? null);
+      setChatRoomRequests(roomRequests);
+      setActiveChatId((current) => (rooms.some((room) => room.id === current) ? current : rooms[0]?.id ?? null));
       setChatState({
         loading: false,
         error: "",
@@ -3826,6 +3858,7 @@ export default function App() {
         loading: false,
         error: error.message || "대화방을 불러오지 못했습니다.",
       });
+      setChatRoomRequests([]);
       return [];
     }
   };
@@ -3905,6 +3938,32 @@ export default function App() {
   const selectChatThread = (roomId) => {
     setActiveChatId(roomId);
     loadChatMessages(roomId);
+  };
+
+  const acceptRoomRequest = async (roomId) => {
+    try {
+      const acceptedRoom = await acceptChatRoom(roomId, currentUserId);
+      const messages = await fetchChatMessages(acceptedRoom.id, currentUserId);
+
+      setChatRoomRequests((current) => current.filter((request) => request.id !== acceptedRoom.id));
+      setChatThreads((current) => {
+        const previousRoom = current.find((thread) => thread.id === acceptedRoom.id);
+        const nextRoom = {
+          ...(previousRoom ? { ...acceptedRoom, messages: previousRoom.messages } : acceptedRoom),
+          messages,
+          preview: messages.at(-1)?.text || acceptedRoom.preview,
+          timestamp: messages.at(-1)?.timestamp || acceptedRoom.timestamp,
+        };
+
+        return [nextRoom, ...current.filter((thread) => thread.id !== acceptedRoom.id)];
+      });
+      setActiveChatId(acceptedRoom.id);
+    } catch (error) {
+      setChatState((current) => ({
+        ...current,
+        error: error.message || "채팅 요청을 수락하지 못했습니다.",
+      }));
+    }
   };
 
   const requestLoginForPage = (page) => {
@@ -4278,11 +4337,13 @@ export default function App() {
     pageContent = (
       <ChatPage
         threads={chatThreads}
+        roomRequests={chatRoomRequests}
         activeThreadId={activeChatId}
         currentUserId={currentUserId}
         isLoading={chatState.loading}
         errorMessage={chatState.error}
         onSelectThread={selectChatThread}
+        onAcceptRoomRequest={acceptRoomRequest}
         onSendMessage={sendChatMessage}
         onReceiveMessage={appendSocketChatMessage}
         onSocketError={updateChatSocketError}

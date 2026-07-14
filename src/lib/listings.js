@@ -1,7 +1,7 @@
 import { normalizeApiErrorMessage } from "./apiError.js";
 import { fetchWithAuth, getSavedAuthSession } from "./auth.js";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 
 class ListingsApiError extends Error {
   constructor(message, code) {
@@ -20,7 +20,7 @@ const getApiBaseUrl = () => {
 };
 
 const requestListings = async (path, { method = "GET", searchParams = {}, body, auth = false } = {}) => {
-  const url = new URL(`${getApiBaseUrl()}${path}`);
+  const url = new URL(`${getApiBaseUrl()}${path}`, window.location.origin);
 
   Object.entries(searchParams).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") {

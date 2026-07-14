@@ -1,6 +1,6 @@
 import { normalizeApiErrorMessage } from "./apiError.js";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 const AUTH_STORAGE_KEY = "kolpop.auth";
 const AUTH_EXPIRED_EVENT = "kolpop:auth-expired";
 const AUTH_UPDATED_EVENT = "kolpop:auth-updated";
