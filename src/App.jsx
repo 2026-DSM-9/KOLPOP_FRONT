@@ -2901,7 +2901,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                         type="button"
                         onClick={() => removeCustomFacility(facility)}
                       >
-                        <span>#{facility}</span>
+                        <span>{facility}</span>
                         <span className="field-tag__remove" aria-hidden="true">
                           ×
                         </span>
@@ -2959,7 +2959,7 @@ function RegistrationPage({ onSubmitListing, appKey, editingListing }) {
                         type="button"
                         onClick={() => removeCustomRestriction(restriction)}
                       >
-                        <span>#{restriction}</span>
+                        <span>{restriction}</span>
                         <span className="field-tag__remove" aria-hidden="true">
                           ×
                         </span>
