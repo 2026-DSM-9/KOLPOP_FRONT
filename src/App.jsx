@@ -779,8 +779,6 @@ function MyPage({
   const infoRows = [
     { label: "이름", field: "name", value: profileDraft.name },
     { label: "휴대폰 번호", field: "phone", value: formatPhoneNumber(profileDraft.phone) },
-    { label: "주소", field: "address", value: profileDraft.address },
-    { label: "상세주소", field: "detailAddress", value: profileDraft.detailAddress },
     { label: "자기소개", field: "bio", value: profileDraft.bio, multiline: true },
   ];
 
