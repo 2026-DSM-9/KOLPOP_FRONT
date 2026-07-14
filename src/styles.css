@@ -576,6 +576,14 @@ img {
   background: var(--blue-deep);
 }
 
+.search-panel__message {
+  width: min(100%, 920px);
+  margin: -14px auto 20px;
+  color: #d9485f;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
 .map-preview {
   width: min(100%, var(--map-width));
   margin: 0 auto;

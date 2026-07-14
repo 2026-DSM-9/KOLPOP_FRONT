@@ -1871,6 +1871,7 @@ function StepperField({
 
 function HomePage({ listings, appKey, onOpenDetail }) {
   const [query, setQuery] = useState("");
+  const [searchMessage, setSearchMessage] = useState("");
   const [activeListingId, setActiveListingId] = useState(listings[0]?.id ?? null);
   const [mapVisibleIds, setMapVisibleIds] = useState(null);
 
@@ -1902,7 +1903,7 @@ function HomePage({ listings, appKey, onOpenDetail }) {
     setActiveListingId(visibleListings[0]?.id ?? null);
   }, [activeListingId, visibleListings]);
 
-  const { mapReady, mapMessage, mapRef, focusListings, panToListing, resetMapBounds } = useKakaoMap({
+  const { mapReady, mapMessage, mapRef, focusListings, panToListing, searchLocation, resetMapBounds } = useKakaoMap({
     appKey,
     listings,
     activeListingId,
@@ -1923,14 +1924,25 @@ function HomePage({ listings, appKey, onOpenDetail }) {
     focusListings(panelFilteredListings);
   }, [focusListings, mapReady, query]);
 
-  const handleSearchSubmit = (event) => {
+  const handleSearchSubmit = async (event) => {
     event.preventDefault();
+    setSearchMessage("");
+
+    const normalizedQuery = query.trim();
+
+    if (!normalizedQuery) {
+      if (mapReady) {
+        resetMapBounds();
+      }
+      return;
+    }
 
     if (panelFilteredListings.length > 0) {
       setActiveListingId(panelFilteredListings[0].id);
     }
 
     if (!mapReady) {
+      setSearchMessage(mapMessage || "지도를 준비하고 있습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
 
@@ -1944,8 +1956,10 @@ function HomePage({ listings, appKey, onOpenDetail }) {
       return;
     }
 
-    if (query.trim().length === 0) {
-      resetMapBounds();
+    try {
+      await searchLocation(normalizedQuery);
+    } catch (error) {
+      setSearchMessage(error.message || "검색한 위치로 이동하지 못했습니다.");
     }
   };
 
@@ -1977,12 +1991,21 @@ function HomePage({ listings, appKey, onOpenDetail }) {
               placeholder="지역, 주소, 건물명, 상권, 지하철역"
               autoComplete="off"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              aria-describedby={searchMessage ? "listing-search-message" : undefined}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSearchMessage("");
+              }}
             />
             <button type="submit" aria-label="검색">
               <NavIcon type="search" />
             </button>
           </form>
+          {searchMessage && (
+            <p id="listing-search-message" className="search-panel__message" role="status">
+              {searchMessage}
+            </p>
+          )}
 
           <div className={`map-preview ${mapReady ? "" : "is-fallback"}`}>
             <div className="map-preview__toolbar">
