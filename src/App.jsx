@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useKakaoMap } from "./hooks/useKakaoMap.js";
 import {
   getKakaoMapErrorMessage,
@@ -2290,19 +2290,90 @@ function ReservationCard({ reservation, onApprove, onReject, onOpenChat }) {
 function ChatPage({
   threads,
   activeThreadId,
+  currentUserId,
   isLoading,
   errorMessage,
   onSelectThread,
   onSendMessage,
+  onReceiveMessage,
+  onSocketError,
   onCompleteDeal,
 }) {
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
   const [draftMessage, setDraftMessage] = useState("");
   const imageInputRef = useRef(null);
+  const messageEndRef = useRef(null);
+  const socketRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
 
   useEffect(() => {
     setDraftMessage("");
   }, [activeThreadId]);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [activeThreadId, activeThread?.messages.length]);
+
+  useEffect(() => {
+    if (!activeThread?.id) {
+      window.clearTimeout(reconnectTimerRef.current);
+      socketRef.current?.close();
+      socketRef.current = null;
+      return undefined;
+    }
+
+    let shouldReconnect = true;
+    const roomId = Number(activeThread.id);
+    socketRef.current?.close();
+    socketRef.current = null;
+
+    const connectSocket = () => {
+      window.clearTimeout(reconnectTimerRef.current);
+
+      try {
+        socketRef.current = createChatSocket({
+          roomId,
+          onOpen: () => {
+            onSocketError("");
+          },
+          onMessage: (payload) => {
+            const nextMessage = normalizeSocketMessage(payload, currentUserId, roomId);
+
+            if (!nextMessage || (nextMessage.roomId && nextMessage.roomId !== roomId)) {
+              return;
+            }
+
+            onReceiveMessage(roomId, nextMessage);
+          },
+          onError: (error) => {
+            onSocketError(error.message);
+          },
+          onClose: () => {
+            if (!shouldReconnect) {
+              return;
+            }
+
+            reconnectTimerRef.current = window.setTimeout(connectSocket, 1000);
+          },
+        });
+      } catch (error) {
+        onSocketError(error.message || "채팅 소켓을 연결하지 못했습니다.");
+
+        if (shouldReconnect) {
+          reconnectTimerRef.current = window.setTimeout(connectSocket, 1000);
+        }
+      }
+    };
+
+    connectSocket();
+
+    return () => {
+      shouldReconnect = false;
+      window.clearTimeout(reconnectTimerRef.current);
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+  }, [activeThread?.id, currentUserId, onReceiveMessage, onSocketError]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -2310,6 +2381,16 @@ function ChatPage({
     const trimmedMessage = draftMessage.trim();
 
     if (!activeThread || trimmedMessage.length === 0) {
+      return;
+    }
+
+    try {
+      sendChatSocketMessage(socketRef.current, {
+        roomId: activeThread.id,
+        content: trimmedMessage,
+      });
+    } catch (error) {
+      onSocketError(error.message || "메시지를 보내지 못했습니다.");
       return;
     }
 
@@ -2412,6 +2493,7 @@ function ChatPage({
                     <p>아직 메시지가 없습니다.</p>
                   </div>
                 ) : null}
+                <div ref={messageEndRef} />
               </div>
 
               <form className="chat-composer" onSubmit={handleSubmit}>
@@ -3373,8 +3455,6 @@ export default function App() {
     loading: false,
     error: "",
   });
-  const chatSocketRef = useRef(null);
-
   const appKey = import.meta.env.VITE_KAKAO_MAP_APP_KEY ?? "";
   const editingListing = listings.find((listing) => listing.id === editingListingId) ?? null;
   const selectedListing = listings.find((listing) => listing.id === selectedListingId) ?? null;
@@ -3757,79 +3837,35 @@ export default function App() {
   }, [currentPage, isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || currentPage !== "chat" || !activeChatId) {
+    if (!isAuthenticated || currentPage !== "chat" || chatThreads.length === 0) {
       return;
     }
 
-    loadChatMessages(activeChatId);
-  }, [activeChatId, currentPage, isAuthenticated]);
+    if (chatThreads.some((thread) => thread.id === activeChatId)) {
+      return;
+    }
+
+    setActiveChatId(chatThreads[0].id);
+  }, [activeChatId, chatThreads, currentPage, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated || currentPage !== "chat" || !activeChatId) {
-      chatSocketRef.current?.close();
-      chatSocketRef.current = null;
       return undefined;
     }
 
-    chatSocketRef.current?.close();
+    const syncActiveMessages = () => {
+      loadChatMessages(activeChatId);
+    };
 
-    try {
-      chatSocketRef.current = createChatSocket({
-        roomId: activeChatId,
-        onMessage: (payload) => {
-          const nextMessage = normalizeSocketMessage(payload, currentUserId);
-
-          if (nextMessage.roomId && nextMessage.roomId !== Number(activeChatId)) {
-            return;
-          }
-
-          setChatThreads((current) =>
-            current.map((thread) => {
-              if (thread.id !== Number(activeChatId)) {
-                return thread;
-              }
-
-              if (
-                thread.messages.some((message) => message.id === nextMessage.id) ||
-                thread.messages.some(
-                  (message) =>
-                    message.sender === nextMessage.sender &&
-                    message.text === nextMessage.text &&
-                    message.timestamp === "방금",
-                )
-              ) {
-                return thread;
-              }
-
-              return {
-                ...thread,
-                preview: nextMessage.text || thread.preview,
-                timestamp: nextMessage.timestamp || "방금",
-                unreadCount: 0,
-                messages: [...thread.messages, nextMessage],
-              };
-            }),
-          );
-        },
-        onError: (error) => {
-          setChatState((current) => ({
-            ...current,
-            error: error.message,
-          }));
-        },
-      });
-    } catch (error) {
-      setChatState((current) => ({
-        ...current,
-        error: error.message || "채팅 소켓을 연결하지 못했습니다.",
-      }));
-    }
+    syncActiveMessages();
+    const intervalId = window.setInterval(syncActiveMessages, 2000);
+    window.addEventListener("focus", syncActiveMessages);
 
     return () => {
-      chatSocketRef.current?.close();
-      chatSocketRef.current = null;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncActiveMessages);
     };
-  }, [activeChatId, currentPage, currentUserId, isAuthenticated]);
+  }, [activeChatId, currentPage, isAuthenticated]);
 
   const selectChatThread = (roomId) => {
     setActiveChatId(roomId);
@@ -3912,24 +3948,44 @@ export default function App() {
     );
   };
 
+  const appendSocketChatMessage = useCallback((threadId, nextMessage) => {
+    setChatThreads((current) =>
+      current.map((thread) => {
+        if (thread.id !== threadId) {
+          return thread;
+        }
+
+        if (
+          thread.messages.some((message) => message.id === nextMessage.id) ||
+          thread.messages.some(
+            (message) =>
+              message.sender === nextMessage.sender &&
+              message.text === nextMessage.text &&
+              message.timestamp === "방금",
+          )
+        ) {
+          return thread;
+        }
+
+        return {
+          ...thread,
+          preview: nextMessage.text || thread.preview,
+          timestamp: nextMessage.timestamp || "방금",
+          unreadCount: 0,
+          messages: [...thread.messages, nextMessage],
+        };
+      }),
+    );
+  }, []);
+
+  const updateChatSocketError = useCallback((message) => {
+    setChatState((current) => ({
+      ...current,
+      error: message || "",
+    }));
+  }, []);
+
   const sendChatMessage = (threadId, payload) => {
-    const messageDraft = typeof payload === "string" ? { text: payload } : payload;
-
-    if (messageDraft.text && !messageDraft.imageSrc) {
-      try {
-        sendChatSocketMessage(chatSocketRef.current, {
-          roomId: threadId,
-          content: messageDraft.text,
-        });
-      } catch (error) {
-        setChatState((current) => ({
-          ...current,
-          error: error.message || "메시지를 보내지 못했습니다.",
-        }));
-        return;
-      }
-    }
-
     appendLocalChatMessage(threadId, payload);
   };
 
@@ -4187,10 +4243,13 @@ export default function App() {
       <ChatPage
         threads={chatThreads}
         activeThreadId={activeChatId}
+        currentUserId={currentUserId}
         isLoading={chatState.loading}
         errorMessage={chatState.error}
         onSelectThread={selectChatThread}
         onSendMessage={sendChatMessage}
+        onReceiveMessage={appendSocketChatMessage}
+        onSocketError={updateChatSocketError}
         onCompleteDeal={completeDeal}
       />
     );

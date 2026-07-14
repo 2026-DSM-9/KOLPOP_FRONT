@@ -19,12 +19,22 @@ const getSocketUrl = (roomId) => {
   return url.toString();
 };
 
-export const createChatSocket = ({ roomId, onMessage, onError, onClose }) => {
+export const createChatSocket = ({ roomId, onOpen, onMessage, onError, onClose }) => {
   const socket = new WebSocket(getSocketUrl(roomId));
+
+  socket.addEventListener("open", () => {
+    onOpen?.();
+  });
 
   socket.addEventListener("message", (event) => {
     try {
       const payload = JSON.parse(event.data);
+
+      if (Array.isArray(payload)) {
+        payload.forEach((item) => onMessage?.(item));
+        return;
+      }
+
       onMessage?.(payload);
     } catch {
       onMessage?.({
@@ -38,7 +48,9 @@ export const createChatSocket = ({ roomId, onMessage, onError, onClose }) => {
     onError?.(new Error("채팅 소켓 연결에 실패했습니다."));
   });
 
-  socket.addEventListener("close", onClose);
+  socket.addEventListener("close", (event) => {
+    onClose?.(event);
+  });
 
   return socket;
 };
@@ -56,20 +68,61 @@ export const sendChatSocketMessage = (socket, { roomId, content }) => {
   );
 };
 
-export const normalizeSocketMessage = (payload, currentUserId) => {
-  const senderId = `${payload.sender?.id ?? payload.senderId ?? ""}`;
+const unwrapSocketPayload = (payload) => {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+
+  if (payload.data && typeof payload.data === "object") {
+    return unwrapSocketPayload(payload.data);
+  }
+
+  if (payload.message && typeof payload.message === "object") {
+    return unwrapSocketPayload(payload.message);
+  }
+
+  return payload;
+};
+
+export const normalizeSocketMessage = (payload, currentUserId, fallbackRoomId) => {
+  const message = unwrapSocketPayload(payload);
+
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const messageType = `${message.type ?? message.event ?? ""}`.toUpperCase();
+
+  if (messageType === "PING" || messageType === "PONG" || messageType === "CONNECTED") {
+    return null;
+  }
+
+  const text = message.content ?? message.text ?? message.body ?? "";
+
+  if (!text) {
+    return null;
+  }
+
+  const senderId = `${message.sender?.id ?? message.sender?.userId ?? message.senderId ?? message.userId ?? ""}`;
   const normalizedCurrentUserId = `${currentUserId ?? ""}`;
-  const senderRole = `${payload.sender?.role ?? payload.senderRole ?? ""}`.toLowerCase();
+  const senderRole = `${message.sender?.role ?? message.senderRole ?? message.role ?? ""}`.toLowerCase();
   const isMine =
     (senderId && normalizedCurrentUserId && senderId === normalizedCurrentUserId) ||
     senderRole.includes("landlord");
+  const roomId = Number(
+    message.roomId ??
+      message.chatRoomId ??
+      message.room?.id ??
+      message.chatRoom?.id ??
+      fallbackRoomId,
+  );
 
   return {
-    id: Number(payload.messageId ?? payload.id ?? Date.now()),
-    roomId: Number(payload.roomId),
+    id: Number(message.messageId ?? message.id ?? `${Date.now()}${Math.floor(Math.random() * 1000)}`),
+    roomId,
     sender: isMine ? "host" : "guest",
-    text: payload.content ?? payload.message ?? payload.text ?? "",
-    timestamp: "",
-    rawSender: payload.sender ?? null,
+    text,
+    timestamp: message.createdAt ?? message.timestamp ?? "",
+    rawSender: message.sender ?? null,
   };
 };
