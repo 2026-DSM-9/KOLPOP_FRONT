@@ -955,9 +955,10 @@ img {
 }
 
 .chat-thread-card {
+  position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   padding: 28px 30px;
@@ -987,16 +988,20 @@ img {
 }
 
 .chat-thread-card__top strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #111827;
   font-size: 0.98rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
 }
 
 .chat-thread-card__top span {
   flex-shrink: 0;
   color: #9aa1ab;
   font-size: 0.94rem;
+  white-space: nowrap;
 }
 
 .chat-thread-card__listing,
@@ -1015,22 +1020,26 @@ img {
 
 .chat-thread-card__preview {
   margin-top: 10px;
+  padding-right: 42px;
   color: #646b75;
   font-size: 0.98rem;
   line-height: 1.45;
 }
 
 .chat-thread-card__badge {
-  min-width: 42px;
-  height: 42px;
-  padding: 0 12px;
+  position: absolute;
+  right: 30px;
+  bottom: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--blue);
   color: #ffffff;
-  font-size: 1rem;
+  font-size: 0.8rem;
   font-weight: 600;
 }
 
@@ -1119,7 +1128,8 @@ img {
   font-size: clamp(0.98rem, 1.05vw, 1.04rem);
   line-height: 1.55;
   letter-spacing: -0.03em;
-  word-break: keep-all;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
 }
 
@@ -1150,6 +1160,7 @@ img {
 
 .chat-message__text {
   display: block;
+  max-width: 100%;
 }
 
 .chat-message.has-image .chat-message__text {
@@ -1911,11 +1922,14 @@ img {
 }
 
 .detail-period-item__icon {
+  flex: 0 0 52px;
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
 
 .detail-period-item__icon.is-blue {
@@ -1929,6 +1943,8 @@ img {
 }
 
 .detail-period-item__icon svg {
+  display: block;
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
 }
@@ -3070,9 +3086,9 @@ img {
   }
 
   .chat-thread-card__top {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
+    align-items: baseline;
+    flex-direction: row;
+    gap: 12px;
   }
 
   .chat-thread-card__listing {
@@ -3084,9 +3100,11 @@ img {
   }
 
   .chat-thread-card__badge {
-    min-width: 36px;
-    height: 36px;
-    font-size: 0.92rem;
+    right: 20px;
+    bottom: 20px;
+    min-width: 26px;
+    height: 26px;
+    font-size: 0.76rem;
   }
 
   .chat-panel__header {
